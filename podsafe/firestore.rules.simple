@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Users can read and write their own profile
+      allow read, write: if isOwner(userId);
+      // Authenticated users can read other users (for displaying names, etc.)
+      allow read: if isAuthenticated();
+    }
+
+    // Companies collection
+    match /companies/{companyId} {
+      // All authenticated users can read companies
+      allow read: if isAuthenticated();
+      // Only authenticated users can write (we'll add role check later)
+      allow write: if isAuthenticated();
+    }
+
+    // Deliveries collection
+    match /deliveries/{deliveryId} {
+      // Authenticated users can read deliveries
+      allow read: if isAuthenticated();
+      // Authenticated users can create/update deliveries
+      allow write: if isAuthenticated();
+    }
+
+    // PODs (Proof of Delivery) collection
+    match /pods/{podId} {
+      // Authenticated users can read/write PODs
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

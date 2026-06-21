@@ -1,0 +1,9 @@
+{
+  "projects": {
+    "default": "podsafe-92a3e",
+    "prod": "podsafe-production",
+    "dev": "podsafe-92a3e"
+  },
+  "targets": {},
+  "etags": {}
+}

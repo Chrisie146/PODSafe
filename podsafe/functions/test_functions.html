@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PODSafe Cloud Functions Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 30px;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    .test-section {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-left: 4px solid #667eea;
+    }
+    .test-section h2 {
+      color: #333;
+      font-size: 18px;
+      margin-bottom: 15px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      color: #555;
+      font-weight: 500;
+      margin-bottom: 5px;
+      font-size: 14px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    }
+    button:hover { background: #5568d3; transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .output {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 15px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .success { color: #4caf50; }
+    .error { color: #f44336; }
+    .info { color: #2196f3; }
+    .warning { color: #ff9800; }
+    .auth-section {
+      background: #e3f2fd;
+      border-left-color: #2196f3;
+      margin-bottom: 30px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 PODSafe Cloud Functions Test Console</h1>
+    <p class="subtitle">Test the deployed Cloud Functions for user management</p>
+
+    <!-- Authentication Section -->
+    <div class="test-section auth-section">
+      <h2>🔐 Authentication</h2>
+      <div class="form-group">
+        <label>Admin Email</label>
+        <input type="email" id="adminEmail" value="admin.alpha@test.com" placeholder="admin@company.com">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="adminPassword" value="TestPass123!" placeholder="Password">
+      </div>
+      <button onclick="signIn()">Sign In as Admin</button>
+      <button onclick="signOut()" style="background: #666;">Sign Out</button>
+      <div id="authOutput" class="output" style="display: none;"></div>
+    </div>
+
+    <!-- Test 1: Invite User -->
+    <div class="test-section">
+      <h2>✉️ Test 1: Invite User</h2>
+      <div class="grid">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="inviteEmail" placeholder="newuser@example.com">
+        </div>
+        <div class="form-group">
+          <label>Display Name</label>
+          <input type="text" id="inviteDisplayName" placeholder="John Doe">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Role</label>
+        <select id="inviteRole">
+          <option value="driver">Driver</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <button onclick="testInviteUser()">Invite User</button>
+      <div id="inviteOutput" class="output" style="display: none;"></div>
+    </div>
+
+    <!-- Test 2: Create Company -->
+    <div class="test-section">
+      <h2>🏢 Test 2: Create Company</h2>
+      <div class="grid">
+        <div class="form-group">
+          <label>Company Name</label>
+          <input type="text" id="companyName" placeholder="Acme Corp">
+        </div>
+        <div class="form-group">
+          <label>Company Email</label>
+          <input type="email" id="companyEmail" placeholder="info@acme.com">
+        </div>
+      </div>
+      <div class="grid">
+        <div class="form-group">
+          <label>Admin Email</label>
+          <input type="email" id="companyAdminEmail" placeholder="admin@acme.com">
+        </div>
+        <div class="form-group">
+          <label>Admin Name</label>
+          <input type="text" id="companyAdminName" placeholder="Jane Smith">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Temporary Password</label>
+        <input type="text" id="companyAdminPassword" placeholder="TempPass123!">
+      </div>
+      <button onclick="testCreateCompany()">Create Company</button>
+      <div id="companyOutput" class="output" style="display: none;"></div>
+    </div>
+
+    <!-- Test 3: Deactivate User -->
+    <div class="test-section">
+      <h2>🚫 Test 3: Deactivate User</h2>
+      <div class="form-group">
+        <label>User ID</label>
+        <input type="text" id="deactivateUserId" placeholder="Firebase UID">
+      </div>
+      <button onclick="testDeactivateUser()">Deactivate User</button>
+      <div id="deactivateOutput" class="output" style="display: none;"></div>
+    </div>
+
+    <!-- Test 4: Reactivate User -->
+    <div class="test-section">
+      <h2>✅ Test 4: Reactivate User</h2>
+      <div class="form-group">
+        <label>User ID</label>
+        <input type="text" id="reactivateUserId" placeholder="Firebase UID">
+      </div>
+      <button onclick="testReactivateUser()">Reactivate User</button>
+      <div id="reactivateOutput" class="output" style="display: none;"></div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-functions-compat.js"></script>
+
+  <script>
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDQTPiBCb104C5ROKYf0xvNR8vaR0m_GjQ",
+      authDomain: "podsafe-92a3e.firebaseapp.com",
+      projectId: "podsafe-92a3e",
+      storageBucket: "podsafe-92a3e.firebasestorage.app",
+      messagingSenderId: "143672681817",
+      appId: "1:143672681817:web:69c7df3f67b40552955848",
+      measurementId: "G-PZQ9KM02G1"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const functions = firebase.functions();
+
+    let currentUser = null;
+
+    // Helper functions
+    function log(elementId, message, type = 'info') {
+      const output = document.getElementById(elementId);
+      output.style.display = 'block';
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type;
+      output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function clearLog(elementId) {
+      const output = document.getElementById(elementId);
+      output.innerHTML = '';
+    }
+
+    // Authentication
+    async function signIn() {
+      clearLog('authOutput');
+      const email = document.getElementById('adminEmail').value;
+      const password = document.getElementById('adminPassword').value;
+
+      try {
+        log('authOutput', 'Signing in...', 'info');
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        currentUser = userCredential.user;
+        log('authOutput', `✅ Signed in as ${currentUser.email}`, 'success');
+        log('authOutput', `User ID: ${currentUser.uid}`, 'info');
+      } catch (error) {
+        log('authOutput', `❌ Error: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+
+    async function signOut() {
+      clearLog('authOutput');
+      try {
+        await auth.signOut();
+        currentUser = null;
+        log('authOutput', '✅ Signed out successfully', 'success');
+      } catch (error) {
+        log('authOutput', `❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    // Test 1: Invite User
+    async function testInviteUser() {
+      clearLog('inviteOutput');
+      
+      if (!currentUser) {
+        log('inviteOutput', '❌ Please sign in as an admin first', 'error');
+        return;
+      }
+
+      const email = document.getElementById('inviteEmail').value;
+      const displayName = document.getElementById('inviteDisplayName').value;
+      const role = document.getElementById('inviteRole').value;
+
+      if (!email || !displayName) {
+        log('inviteOutput', '❌ Please fill in all fields', 'error');
+        return;
+      }
+
+      try {
+        log('inviteOutput', 'Calling inviteUser function...', 'info');
+        log('inviteOutput', `Email: ${email}`, 'info');
+        log('inviteOutput', `Name: ${displayName}`, 'info');
+        log('inviteOutput', `Role: ${role}`, 'info');
+
+        const inviteUserFn = functions.httpsCallable('inviteUser');
+        const result = await inviteUserFn({
+          email: email,
+          fullName: displayName,
+          role: role
+        });
+
+        log('inviteOutput', '✅ User invited successfully!', 'success');
+        log('inviteOutput', `User ID: ${result.data.userId}`, 'success');
+        log('inviteOutput', `Temporary Password: ${result.data.temporaryPassword}`, 'warning');
+        log('inviteOutput', JSON.stringify(result.data, null, 2), 'info');
+      } catch (error) {
+        log('inviteOutput', `❌ Error: ${error.message}`, 'error');
+        log('inviteOutput', JSON.stringify(error, null, 2), 'error');
+        console.error(error);
+      }
+    }
+
+    // Test 2: Create Company
+    async function testCreateCompany() {
+      clearLog('companyOutput');
+      
+      if (!currentUser) {
+        log('companyOutput', '❌ Please sign in as an admin first', 'error');
+        return;
+      }
+
+      const companyName = document.getElementById('companyName').value;
+      const companyEmail = document.getElementById('companyEmail').value;
+      const adminEmail = document.getElementById('companyAdminEmail').value;
+      const adminName = document.getElementById('companyAdminName').value;
+      const adminPassword = document.getElementById('companyAdminPassword').value;
+
+      if (!companyName || !companyEmail || !adminEmail || !adminName || !adminPassword) {
+        log('companyOutput', '❌ Please fill in all fields', 'error');
+        return;
+      }
+
+      try {
+        log('companyOutput', 'Calling createCompany function...', 'info');
+        log('companyOutput', `Company: ${companyName}`, 'info');
+        log('companyOutput', `Admin: ${adminName} (${adminEmail})`, 'info');
+
+        const createCompanyFn = functions.httpsCallable('createCompany');
+        const result = await createCompanyFn({
+          name: companyName,
+          email: companyEmail,
+          phone: '',
+          address: '',
+          adminEmail: adminEmail,
+          adminName: adminName,
+          temporaryPassword: adminPassword
+        });
+
+        log('companyOutput', '✅ Company created successfully!', 'success');
+        log('companyOutput', `Company ID: ${result.data.companyId}`, 'success');
+        log('companyOutput', `Admin ID: ${result.data.adminUserId}`, 'success');
+        log('companyOutput', JSON.stringify(result.data, null, 2), 'info');
+      } catch (error) {
+        log('companyOutput', `❌ Error: ${error.message}`, 'error');
+        log('companyOutput', JSON.stringify(error, null, 2), 'error');
+        console.error(error);
+      }
+    }
+
+    // Test 3: Deactivate User
+    async function testDeactivateUser() {
+      clearLog('deactivateOutput');
+      
+      if (!currentUser) {
+        log('deactivateOutput', '❌ Please sign in as an admin first', 'error');
+        return;
+      }
+
+      const userId = document.getElementById('deactivateUserId').value;
+
+      if (!userId) {
+        log('deactivateOutput', '❌ Please enter a user ID', 'error');
+        return;
+      }
+
+      try {
+        log('deactivateOutput', 'Calling deactivateUser function...', 'info');
+        log('deactivateOutput', `User ID: ${userId}`, 'info');
+
+        const deactivateUserFn = functions.httpsCallable('deactivateUser');
+        const result = await deactivateUserFn({ userId: userId });
+
+        log('deactivateOutput', '✅ User deactivated successfully!', 'success');
+        log('deactivateOutput', JSON.stringify(result.data, null, 2), 'info');
+      } catch (error) {
+        log('deactivateOutput', `❌ Error: ${error.message}`, 'error');
+        log('deactivateOutput', JSON.stringify(error, null, 2), 'error');
+        console.error(error);
+      }
+    }
+
+    // Test 4: Reactivate User
+    async function testReactivateUser() {
+      clearLog('reactivateOutput');
+      
+      if (!currentUser) {
+        log('reactivateOutput', '❌ Please sign in as an admin first', 'error');
+        return;
+      }
+
+      const userId = document.getElementById('reactivateUserId').value;
+
+      if (!userId) {
+        log('reactivateOutput', '❌ Please enter a user ID', 'error');
+        return;
+      }
+
+      try {
+        log('reactivateOutput', 'Calling reactivateUser function...', 'info');
+        log('reactivateOutput', `User ID: ${userId}`, 'info');
+
+        const reactivateUserFn = functions.httpsCallable('reactivateUser');
+        const result = await reactivateUserFn({ userId: userId });
+
+        log('reactivateOutput', '✅ User reactivated successfully!', 'success');
+        log('reactivateOutput', JSON.stringify(result.data, null, 2), 'info');
+      } catch (error) {
+        log('reactivateOutput', `❌ Error: ${error.message}`, 'error');
+        log('reactivateOutput', JSON.stringify(error, null, 2), 'error');
+        console.error(error);
+      }
+    }
+
+    // Auto-populate test data
+    document.getElementById('inviteEmail').value = `test.user${Date.now()}@example.com`;
+    document.getElementById('inviteDisplayName').value = 'Test User';
+    document.getElementById('companyName').value = `Test Company ${new Date().toLocaleDateString()}`;
+    document.getElementById('companyEmail').value = `info${Date.now()}@testcompany.com`;
+    document.getElementById('companyAdminEmail').value = `admin${Date.now()}@testcompany.com`;
+    document.getElementById('companyAdminName').value = 'Test Admin';
+    document.getElementById('companyAdminPassword').value = 'TempPass123!';
+  </script>
+</body>
+</html>

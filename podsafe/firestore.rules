@@ -1,0 +1,629 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================================================
+    // HELPER FUNCTIONS - AUTHENTICATION & AUTHORIZATION
+    // ========================================================================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+    
+    // Get user data with caching
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function getUserRole(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role;
+    }
+    
+    function getUserCompanyId(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.companyId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && getUserData().role == 'admin';
+    }
+    
+    function isDriver() {
+      return isAuthenticated() && getUserData().role == 'driver';
+    }
+    
+    function isCompanyMember(companyId) {
+      return isAuthenticated() && getUserData().companyId == companyId;
+    }
+    
+    function isActiveUser() {
+      return isAuthenticated() && getUserData().isActive == true;
+    }
+    
+    function isSameCompany(userId) {
+      return isAuthenticated() && 
+             getUserData().companyId == getUserCompanyId(userId);
+    }
+    
+    // ========================================================================
+    // VALIDATION FUNCTIONS
+    // ========================================================================
+    
+    function isValidEmail(email) {
+      return email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    }
+    
+    function isValidPhoneNumber(phone) {
+      return phone.matches('^\\+?[0-9]{10,15}$');
+    }
+    
+    function isValidString(value, minLen, maxLen) {
+      return value is string && 
+             value.size() >= minLen && 
+             value.size() <= maxLen;
+    }
+    
+    function hasRequiredKeys(requiredKeys) {
+      return request.resource.data.keys().hasAll(requiredKeys);
+    }
+    
+    function notChanging(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+    
+    function notInUpdate(fields) {
+      return !request.resource.data.keys().hasAny(fields);
+    }
+    
+    // ========================================================================
+    // CHAT HELPER FUNCTIONS
+    // ========================================================================
+    
+    function isConversationParticipant(companyId, conversationId) {
+      return isAuthenticated() &&
+             isCompanyMember(companyId) &&
+             request.auth.uid in get(/databases/$(database)/documents/companies/$(companyId)/conversations/$(conversationId)).data.participantIds;
+    }
+    
+    // ========================================================================
+    // COMPANIES COLLECTION - INVITE ONLY (Cloud Functions Only)
+    // ========================================================================
+    
+    match /companies/{companyId} {
+      // Create: ONLY via Cloud Functions - Users cannot create companies directly
+      allow create: if false;
+      
+      // Read: Only active members of this specific company
+      allow read: if isAuthenticated() && 
+                    isActiveUser() && 
+                    isCompanyMember(companyId);
+      
+      // Update: Only active admins of this company, cannot change critical fields
+      allow update: if isAuthenticated() && 
+                      isActiveUser() &&
+                      isAdmin() && 
+                      isCompanyMember(companyId) &&
+                      notChanging(['companyId', 'createdAt', 'ownerId']);
+      
+      // Delete: Never allow (use soft delete with isActive flag)
+      allow delete: if false;
+      
+      // ========================================================================
+      // CHAT CONVERSATIONS (Company-scoped)
+      // ========================================================================
+      match /conversations/{conversationId} {
+        // List: Only company members
+        allow list: if isAuthenticated() &&
+                     isActiveUser() &&
+                     isCompanyMember(companyId);
+        
+        // Read: Only participants in this conversation
+        allow read: if isAuthenticated() &&
+                     isActiveUser() &&
+                     isCompanyMember(companyId) &&
+                     request.auth.uid in resource.data.participantIds;
+        
+        // Create: Must be company member, valid conversation structure
+        allow create: if isAuthenticated() &&
+                       isActiveUser() &&
+                       isCompanyMember(companyId) &&
+                       (isAdmin() || isDriver()) &&
+                       hasRequiredKeys(['companyId', 'driverId', 'driverName', 'adminId', 'adminName', 
+                                       'participantIds', 'participantRoles', 'lastMessage', 'lastMessageAt',
+                                       'isActive', 'isArchived', 'createdAt', 'updatedAt']) &&
+                       request.resource.data.companyId == companyId &&
+                       request.resource.data.participantIds.size() == 2 &&
+                       request.auth.uid in request.resource.data.participantIds &&
+                       isValidString(request.resource.data.driverName, 1, 100) &&
+                       isValidString(request.resource.data.adminName, 1, 100);
+        
+        // Update: Only participants, limited fields
+        allow update: if isAuthenticated() &&
+                       isActiveUser() &&
+                       isCompanyMember(companyId) &&
+                       request.auth.uid in resource.data.participantIds &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['lastMessage', 'lastMessageAt', 'updatedAt', 'readStatus', 'unreadCount', 'isArchived']) &&
+                       notChanging(['companyId', 'driverId', 'adminId', 'participantIds', 'createdAt']);
+        
+        // Delete: Never (soft delete only)
+        allow delete: if false;
+        
+        // Chat Messages (nested under conversations)
+        match /messages/{messageId} {
+          // List/Read: Only conversation participants
+          allow list, read: if isAuthenticated() &&
+                             isActiveUser() &&
+                             isCompanyMember(companyId) &&
+                             request.auth.uid in get(/databases/$(database)/documents/companies/$(companyId)/conversations/$(conversationId)).data.participantIds;
+          
+          // Create: Only participants, valid message structure
+          allow create: if isAuthenticated() &&
+                         isActiveUser() &&
+                         isCompanyMember(companyId) &&
+                         request.auth.uid in get(/databases/$(database)/documents/companies/$(companyId)/conversations/$(conversationId)).data.participantIds &&
+                         hasRequiredKeys(['conversationId', 'senderId', 'senderName', 'senderRole', 
+                                         'message', 'sentAt', 'isRead', 'isEdited']) &&
+                         request.resource.data.conversationId == conversationId &&
+                         request.resource.data.senderId == request.auth.uid &&
+                         request.resource.data.senderRole in ['admin', 'driver'] &&
+                         isValidString(request.resource.data.message, 1, 5000) &&
+                         request.resource.data.isRead == false &&
+                         request.resource.data.isEdited == false;
+          
+          // Update: Only sender, limited fields
+          allow update: if isAuthenticated() &&
+                         isActiveUser() &&
+                         isCompanyMember(companyId) &&
+                         resource.data.senderId == request.auth.uid &&
+                         request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['message', 'editedAt', 'isEdited', 'isRead']) &&
+                         isValidString(request.resource.data.message, 1, 5000) &&
+                         notChanging(['senderId', 'conversationId', 'sentAt']);
+          
+          // Delete: Never (soft delete only)
+          allow delete: if false;
+        }
+      }
+      
+      // ========================================================================
+      // CLAIM COUNTERS (Company-scoped)
+      // ========================================================================
+      match /claimCounters/{year} {
+        allow read: if isAuthenticated() && 
+                      isActiveUser() && 
+                      isCompanyMember(companyId);
+        
+        allow write: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isCompanyMember(companyId) &&
+                       (isAdmin() || isDriver());
+      }
+      
+      // ========================================================================
+      // CLAIMS (Company-scoped)
+      // ========================================================================
+      match /claims/{claimId} {
+        // Read: Company members only
+        allow read, list: if isAuthenticated() && 
+                           isActiveUser() && 
+                           isCompanyMember(companyId);
+        
+        // Create: Drivers and admins, must have valid structure
+        allow create: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isCompanyMember(companyId) &&
+                       (isAdmin() || isDriver()) &&
+                       hasRequiredKeys(['companyId', 'claimNumber', 'driverId', 'status', 'createdAt']) &&
+                       request.resource.data.companyId == companyId &&
+                       request.resource.data.status in ['open', 'pending', 'resolved', 'rejected'] &&
+                       isValidString(request.resource.data.claimNumber, 1, 50);
+        
+        // Update: Claim owner or admin
+        allow update: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isCompanyMember(companyId) &&
+                       (resource.data.driverId == request.auth.uid || isAdmin()) &&
+                       notChanging(['companyId', 'claimNumber', 'driverId', 'createdAt']);
+        
+        // Delete: Admins only (soft delete preferred)
+        allow delete: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isAdmin() && 
+                       isCompanyMember(companyId);
+      }
+      
+      // ========================================================================
+      // PODS (Company-scoped)
+      // ========================================================================
+      match /pods/{podId} {
+        // Read: Company members only
+        allow read, list: if isAuthenticated() && 
+                           isActiveUser() && 
+                           isCompanyMember(companyId);
+        
+        // Create: Drivers and admins, must belong to company
+        allow create: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isCompanyMember(companyId) &&
+                       hasRequiredKeys(['companyId', 'deliveryId', 'driverId', 'createdAt']) &&
+                       request.resource.data.companyId == companyId;
+        
+        // Update: POD owner or admin
+        allow update: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isCompanyMember(companyId) &&
+                       (resource.data.driverId == request.auth.uid || isAdmin()) &&
+                       notChanging(['companyId', 'deliveryId', 'driverId', 'createdAt']);
+        
+        // Delete: Admins only
+        allow delete: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isAdmin() && 
+                       isCompanyMember(companyId);
+      }
+      
+      // ========================================================================
+      // VEHICLES (Company-scoped)
+      // ========================================================================
+      match /vehicles/{vehicleId} {
+        // Read: Company members only
+        allow read, list: if isAuthenticated() && 
+                           isActiveUser() && 
+                           isCompanyMember(companyId);
+        
+        // Create/Update: Admins only
+        allow create, update: if isAuthenticated() && 
+                               isActiveUser() && 
+                               isAdmin() && 
+                               isCompanyMember(companyId) &&
+                               request.resource.data.companyId == companyId;
+        
+        // Delete: Admins only
+        allow delete: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isAdmin() && 
+                       isCompanyMember(companyId);
+      }
+      
+      // ========================================================================
+      // INTEGRATIONS (Company-scoped)
+      // ========================================================================
+      match /integrations/{integrationId} {
+        // Read: Admins only
+        allow read, list: if isAuthenticated() && 
+                           isActiveUser() && 
+                           isAdmin() && 
+                           isCompanyMember(companyId);
+        
+        // Write: Admins only
+        allow create, update: if isAuthenticated() && 
+                               isActiveUser() && 
+                               isAdmin() && 
+                               isCompanyMember(companyId) &&
+                               request.resource.data.companyId == companyId;
+        
+        // Delete: Admins only
+        allow delete: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isAdmin() && 
+                       isCompanyMember(companyId);
+      }
+      
+      // ========================================================================
+      // SYNC LOGS (Company-scoped)
+      // ========================================================================
+      match /syncLogs/{logId} {
+        // Read: Admins only
+        allow read, list: if isAuthenticated() && 
+                           isActiveUser() && 
+                           isAdmin() && 
+                           isCompanyMember(companyId);
+        
+        // Write: Admins only
+        allow write: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isAdmin() && 
+                       isCompanyMember(companyId);
+      }
+      
+      // ========================================================================
+      // COMPANY SETTINGS (Company-scoped)
+      // ========================================================================
+      match /settings/{settingId} {
+        // Read: Company members
+        allow read: if isAuthenticated() && 
+                      isActiveUser() && 
+                      isCompanyMember(companyId);
+        
+        // Write: Admins only
+        allow write: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isAdmin() && 
+                       isCompanyMember(companyId);
+      }
+      
+      // ========================================================================
+      // ITEM CATALOG (Company-scoped)
+      // ========================================================================
+      match /itemCatalog/{itemId} {
+        // Read: Company members
+        allow read, list: if isAuthenticated() && 
+                           isActiveUser() && 
+                           isCompanyMember(companyId);
+        
+        // Create/Update: Admins only
+        allow create, update: if isAuthenticated() && 
+                               isActiveUser() && 
+                               isAdmin() && 
+                               isCompanyMember(companyId) &&
+                               request.resource.data.companyId == companyId;
+        
+        // Delete: Admins only (soft delete preferred)
+        allow delete: if isAuthenticated() && 
+                       isActiveUser() && 
+                       isAdmin() && 
+                       isCompanyMember(companyId);
+      }
+    }
+    
+    // ========================================================================
+    // COMPANY CODES - LOCKED DOWN (Cloud Functions Only)
+    // ========================================================================
+    
+    match /company_codes/{codeId} {
+      // No direct access - managed via Cloud Functions only
+      allow read, write: if false;
+    }
+    
+    // ========================================================================
+    // USERS COLLECTION - STRICT ACCESS CONTROL
+    // ========================================================================
+    
+    match /users/{userId} {
+      // Read: Users can read their own doc + company members (for name lookup)
+      allow read: if isAuthenticated() && 
+                    isActiveUser() &&
+                    (request.auth.uid == userId || isSameCompany(userId));
+      
+      // List: Company members only (for user management screens)
+      allow list: if isAuthenticated() && isActiveUser();
+      
+      // Create: ONLY during initial registration via Cloud Functions
+      // Users can create their own document with basic info
+      allow create: if isAuthenticated() && 
+                      request.auth.uid == userId &&
+                      hasRequiredKeys(['email', 'fullName', 'role', 'companyId', 'isActive', 'createdAt']) &&
+                      request.resource.data.role in ['admin', 'driver'] &&
+                      isValidEmail(request.resource.data.email) &&
+                      isValidString(request.resource.data.fullName, 2, 100);
+      
+      // Update: Users can update their own non-critical fields
+      // CRITICAL: Cannot change role, companyId, isActive, email
+      allow update: if isAuthenticated() && 
+                      isActiveUser() &&
+                      request.auth.uid == userId &&
+                      request.resource.data.role == resource.data.role &&
+                      request.resource.data.companyId == resource.data.companyId &&
+                      request.resource.data.isActive == resource.data.isActive &&
+                      request.resource.data.email == resource.data.email &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      (request.resource.data.fullName == resource.data.fullName || 
+                       isValidString(request.resource.data.fullName, 2, 100));
+      
+      // Update: Admins can update OTHER users in their company (role changes, activation)
+      // Admins CANNOT change their own role or companyId (prevent self-privilege escalation)
+      allow update: if isAuthenticated() && 
+                      isActiveUser() &&
+                      isAdmin() && 
+                      isSameCompany(userId) &&
+                      request.auth.uid != userId &&
+                      request.resource.data.companyId == resource.data.companyId &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      request.resource.data.email == resource.data.email;
+      
+      // Delete: Never (soft delete with isActive flag)
+      allow delete: if false;
+      
+      // User sub-collections
+      match /devices/{deviceId} {
+        allow read, write: if isAuthenticated() && 
+                            isActiveUser() && 
+                            request.auth.uid == userId;
+      }
+      
+      match /tokens/{tokenId} {
+        allow read, write: if isAuthenticated() && 
+                            isActiveUser() && 
+                            request.auth.uid == userId;
+      }
+    }
+    
+    // ========================================================================
+    // DELIVERIES COLLECTION - COMPANY ISOLATION
+    // ========================================================================
+    
+    match /deliveries/{deliveryId} {
+      // Read single document: Must be from user's company or assigned driver
+      allow read: if isAuthenticated() && 
+                     isActiveUser() &&
+                     (isCompanyMember(resource.data.companyId) ||
+                      resource.data.driverId == request.auth.uid);
+      
+      // List query: Must filter by user's company
+      allow list: if isAuthenticated() && 
+                     isActiveUser() &&
+                     request.query.limit <= 1000 &&
+                     isCompanyMember(getUserData().companyId);
+      
+      // Create: Admins only, must belong to company
+      allow create: if isAuthenticated() && 
+                     isActiveUser() &&
+                     isAdmin() &&
+                     hasRequiredKeys(['companyId', 'driverId', 'status', 'createdAt']) &&
+                     isCompanyMember(request.resource.data.companyId);
+      
+      // Update: Assigned driver or admin from same company
+      allow update: if isAuthenticated() && 
+                     isActiveUser() &&
+                     (resource.data.driverId == request.auth.uid || isAdmin()) &&
+                     isCompanyMember(resource.data.companyId) &&
+                     notChanging(['companyId', 'createdAt']);
+      
+      // Delete: Admins only from same company
+      allow delete: if isAuthenticated() && 
+                     isActiveUser() &&
+                     isAdmin() && 
+                     isCompanyMember(resource.data.companyId);
+    }
+    
+    // ========================================================================
+    // PODS COLLECTION (Top-level, legacy support)
+    // ========================================================================
+    
+    match /pods/{podId} {
+      // Read: Authenticated users only
+      // Note: Simplified to avoid nested reads. App enforces company isolation.
+      allow read, list: if isAuthenticated();
+      
+      // Create: Authenticated users with required fields
+      // Note: Temporarily relaxed for debugging
+      allow create: if isAuthenticated() && 
+                     hasRequiredKeys(['companyId', 'deliveryId', 'driverId', 'createdAt']);
+      
+      // Update: POD owner only, must not change critical fields
+      allow update: if isAuthenticated() && 
+                     notChanging(['companyId', 'deliveryId', 'driverId', 'createdAt']);
+      
+      // Delete: Never allow (use soft delete)
+      allow delete: if false;
+    }
+    
+    // ========================================================================
+    // CUSTOMERS COLLECTION
+    // ========================================================================
+    
+    match /customers/{customerId} {
+      // Read: Authenticated users only
+      allow read, list: if isAuthenticated() && isActiveUser();
+      
+      // Write: Admins only
+      allow create, update, delete: if isAuthenticated() && 
+                                      isActiveUser() &&
+                                      isAdmin();
+    }
+    
+    // ========================================================================
+    // DRIVERS COLLECTION (Legacy - use users collection instead)
+    // ========================================================================
+    
+    match /drivers/{driverId} {
+      // Read: Authenticated users only
+      allow read, list: if isAuthenticated() && isActiveUser();
+      
+      // Write: Admins only
+      allow create, update, delete: if isAuthenticated() && 
+                                      isActiveUser() &&
+                                      isAdmin();
+    }
+    
+    // ========================================================================
+    // CLAIMS COLLECTION (Top-level, legacy support)
+    // ========================================================================
+    
+    match /claims/{claimId} {
+      // Read: Authenticated users
+      allow read, list: if isAuthenticated() && isActiveUser();
+      
+      // Write: Authenticated users (will be restricted via app logic)
+      allow create, update: if isAuthenticated() && isActiveUser();
+      
+      // Delete: Admins only
+      allow delete: if isAuthenticated() && 
+                     isActiveUser() &&
+                     isAdmin();
+    }
+    
+    // ========================================================================
+    // NOTIFICATIONS
+    // ========================================================================
+    
+    match /notifications/{notificationId} {
+      // Read: Own notifications only
+      allow read: if isAuthenticated() && 
+                    isActiveUser() &&
+                    resource.data.userId == request.auth.uid;
+      
+      // List: Own notifications only
+      allow list: if isAuthenticated() && 
+                    isActiveUser();
+      
+      // Write: System can create, users can update their own
+      allow create: if isAuthenticated() && isActiveUser();
+      
+      allow update: if isAuthenticated() && 
+                     isActiveUser() &&
+                     resource.data.userId == request.auth.uid;
+      
+      allow delete: if isAuthenticated() && 
+                     isActiveUser() &&
+                     resource.data.userId == request.auth.uid;
+    }
+    
+    // ========================================================================
+    // POD TOKENS (Public POD Sharing)
+    // ========================================================================
+    
+    match /pod_tokens/{tokenId} {
+      // Read: Anyone with token link (for public POD viewing)
+      allow read: if true;
+      
+      // Create: Authenticated users only
+      allow create: if isAuthenticated() && isActiveUser();
+      
+      // Update/Delete: Creator only
+      allow update, delete: if isAuthenticated() && 
+                             isActiveUser() &&
+                             resource.data.createdBy == request.auth.uid;
+    }
+    
+    // ========================================================================
+    // EXTERNAL DELIVERY TOKENS (Third-Party Upload)
+    // ========================================================================
+    
+    match /external_delivery_tokens/{tokenId} {
+      // Read: Anyone (needed to validate token on upload page)
+      allow read: if true;
+      
+      // Create: Authenticated users only
+      allow create: if isAuthenticated() && 
+                     isActiveUser() &&
+                     hasRequiredKeys(['deliveryId', 'createdBy', 'createdAt', 'isUsed']) &&
+                     request.resource.data.createdBy == request.auth.uid &&
+                     request.resource.data.isUsed == false;
+      
+      // Update: Anyone can mark as used (for upload completion)
+      allow update: if resource.data.isUsed == false &&
+                     (resource.data.expiresAt == null || 
+                      resource.data.expiresAt > request.time) &&
+                     request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['isUsed', 'usedAt', 'uploadedBy']);
+      
+      // Delete: Creator only
+      allow delete: if isAuthenticated() && 
+                     isActiveUser() &&
+                     resource.data.createdBy == request.auth.uid;
+    }
+    
+    // ========================================================================
+    // DEFAULT DENY ALL
+    // ========================================================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

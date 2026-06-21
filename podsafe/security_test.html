@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PODSafe Security Test Console</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      color: #4ec9b0;
+      margin-bottom: 10px;
+    }
+    
+    .status {
+      background: #252526;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      border-left: 3px solid #4ec9b0;
+    }
+    
+    .section {
+      background: #252526;
+      padding: 20px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+    
+    .section h2 {
+      color: #569cd6;
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+    
+    .credentials {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    
+    .credential-box {
+      background: #1e1e1e;
+      padding: 15px;
+      border-radius: 4px;
+      border: 1px solid #3e3e42;
+    }
+    
+    .credential-box h3 {
+      color: #dcdcaa;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    
+    .credential-box p {
+      font-size: 12px;
+      margin-bottom: 5px;
+      color: #9cdcfe;
+    }
+    
+    input, select {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      background: #1e1e1e;
+      border: 1px solid #3e3e42;
+      color: #d4d4d4;
+      border-radius: 4px;
+      font-family: 'Consolas', monospace;
+    }
+    
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+      transition: background 0.2s;
+    }
+    
+    button:hover {
+      background: #1177bb;
+    }
+    
+    button.danger {
+      background: #c72e0f;
+    }
+    
+    button.danger:hover {
+      background: #e03e1f;
+    }
+    
+    button.success {
+      background: #107c10;
+    }
+    
+    button.success:hover {
+      background: #218c21;
+    }
+    
+    .test-list {
+      margin-top: 15px;
+    }
+    
+    .test-item {
+      background: #1e1e1e;
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      border-left: 3px solid #3e3e42;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .test-item.running {
+      border-left-color: #dcdcaa;
+    }
+    
+    .test-item.passed {
+      border-left-color: #4ec9b0;
+    }
+    
+    .test-item.failed {
+      border-left-color: #f48771;
+    }
+    
+    .test-name {
+      flex: 1;
+      font-size: 14px;
+    }
+    
+    .test-status {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 3px;
+    }
+    
+    .test-status.passed {
+      background: #4ec9b0;
+      color: #1e1e1e;
+    }
+    
+    .test-status.failed {
+      background: #f48771;
+      color: #1e1e1e;
+    }
+    
+    .test-status.running {
+      background: #dcdcaa;
+      color: #1e1e1e;
+    }
+    
+    .console {
+      background: #1e1e1e;
+      border: 1px solid #3e3e42;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 15px;
+    }
+    
+    .console-line {
+      margin-bottom: 5px;
+      padding: 2px 0;
+    }
+    
+    .console-line.error {
+      color: #f48771;
+    }
+    
+    .console-line.success {
+      color: #4ec9b0;
+    }
+    
+    .console-line.info {
+      color: #9cdcfe;
+    }
+    
+    .console-line.warning {
+      color: #dcdcaa;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 PODSafe Security Test Console</h1>
+    <p style="margin-bottom: 20px; color: #858585;">Browser-based security rules testing with Firebase Client SDK</p>
+    
+    <div class="status" id="status">
+      <strong>Status:</strong> <span id="statusText">Not connected</span>
+    </div>
+    
+    <!-- Firebase Config -->
+    <div class="section">
+      <h2>1. Firebase Configuration</h2>
+      <p style="margin-bottom: 15px; font-size: 12px; color: #858585;">
+        Enter your Firebase config (from Firebase Console → Project Settings → Web App)
+      </p>
+      <input type="text" id="apiKey" placeholder="API Key">
+      <input type="text" id="authDomain" placeholder="Auth Domain (e.g., project-id.firebaseapp.com)">
+      <input type="text" id="projectId" placeholder="Project ID">
+      <button onclick="initializeFirebase()">Connect to Firebase</button>
+    </div>
+    
+    <!-- Login -->
+    <div class="section">
+      <h2>2. User Authentication</h2>
+      
+      <div class="credentials">
+        <div class="credential-box">
+          <h3>Company Alpha Admin</h3>
+          <p>Email: admin.alpha@test.com</p>
+          <p>Password: TestPass123!</p>
+        </div>
+        <div class="credential-box">
+          <h3>Company Alpha Driver</h3>
+          <p>Email: driver.alpha@test.com</p>
+          <p>Password: TestPass123!</p>
+        </div>
+        <div class="credential-box">
+          <h3>Company Beta Admin</h3>
+          <p>Email: admin.beta@test.com</p>
+          <p>Password: TestPass123!</p>
+        </div>
+      </div>
+      
+      <select id="userSelect">
+        <option value="">-- Select Test User --</option>
+        <option value="admin.alpha@test.com">Company Alpha Admin</option>
+        <option value="driver.alpha@test.com">Company Alpha Driver</option>
+        <option value="admin.beta@test.com">Company Beta Admin</option>
+      </select>
+      <button onclick="login()">Login</button>
+      <button onclick="logout()" class="danger">Logout</button>
+      
+      <div id="userInfo" style="margin-top: 15px; display: none; padding: 10px; background: #1e1e1e; border-radius: 4px;">
+        <p><strong>Logged in as:</strong> <span id="userEmail"></span></p>
+        <p><strong>Company ID:</strong> <span id="userCompanyId"></span></p>
+        <p><strong>Role:</strong> <span id="userRole"></span></p>
+      </div>
+    </div>
+    
+    <!-- Tests -->
+    <div class="section">
+      <h2>3. Security Tests</h2>
+      <p style="margin-bottom: 15px; font-size: 12px; color: #858585;">
+        Run tests to verify security rules are working correctly
+      </p>
+      
+      <button onclick="runAllTests()" class="success">Run All Tests</button>
+      <button onclick="clearConsole()">Clear Console</button>
+      
+      <div class="test-list" id="testList">
+        <!-- Tests will be populated here -->
+      </div>
+      
+      <div class="console" id="console">
+        <div class="console-line info">Ready to run tests...</div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  
+  <script>
+    let db = null;
+    let auth = null;
+    let currentUser = null;
+    
+    const tests = [
+      { id: 'multi-tenant-company', name: 'Multi-Tenant: Company Access', fn: testCompanyAccess },
+      { id: 'multi-tenant-claims', name: 'Multi-Tenant: Claims Isolation', fn: testClaimsIsolation },
+      { id: 'role-user-create', name: 'Role-Based: User Creation (Admin Only)', fn: testUserCreation },
+      { id: 'role-company-update', name: 'Role-Based: Company Update (Admin Only)', fn: testCompanyUpdate },
+      { id: 'self-role-change', name: 'User Protection: Role Change Prevention', fn: testRoleChange },
+      { id: 'self-company-change', name: 'User Protection: Company Change Prevention', fn: testCompanyChange },
+    ];
+    
+    function initializeFirebase() {
+      const apiKey = document.getElementById('apiKey').value;
+      const authDomain = document.getElementById('authDomain').value;
+      const projectId = document.getElementById('projectId').value;
+      
+      if (!apiKey || !authDomain || !projectId) {
+        logConsole('Please fill in all Firebase config fields', 'error');
+        return;
+      }
+      
+      try {
+        const firebaseConfig = {
+          apiKey: apiKey,
+          authDomain: authDomain,
+          projectId: projectId
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        auth = firebase.auth();
+        
+        updateStatus('Connected to Firebase', 'success');
+        logConsole('Firebase initialized successfully', 'success');
+      } catch (error) {
+        updateStatus('Connection failed', 'error');
+        logConsole('Error: ' + error.message, 'error');
+      }
+    }
+    
+    function login() {
+      const email = document.getElementById('userSelect').value;
+      const password = 'TestPass123!';
+      
+      if (!email) {
+        logConsole('Please select a user', 'error');
+        return;
+      }
+      
+      if (!auth) {
+        logConsole('Please connect to Firebase first', 'error');
+        return;
+      }
+      
+      logConsole('Logging in as ' + email + '...', 'info');
+      
+      auth.signInWithEmailAndPassword(email, password)
+        .then(() => {
+          return db.collection('users').doc(auth.currentUser.uid).get();
+        })
+        .then((doc) => {
+          const userData = doc.data();
+          currentUser = {
+            uid: auth.currentUser.uid,
+            email: auth.currentUser.email,
+            companyId: userData.companyId,
+            role: userData.role
+          };
+          
+          document.getElementById('userEmail').textContent = currentUser.email;
+          document.getElementById('userCompanyId').textContent = currentUser.companyId;
+          document.getElementById('userRole').textContent = currentUser.role;
+          document.getElementById('userInfo').style.display = 'block';
+          
+          updateStatus('Logged in as ' + currentUser.role, 'success');
+          logConsole('Login successful', 'success');
+          renderTests();
+        })
+        .catch((error) => {
+          logConsole('Login failed: ' + error.message, 'error');
+        });
+    }
+    
+    function logout() {
+      if (!auth) return;
+      
+      auth.signOut().then(() => {
+        currentUser = null;
+        document.getElementById('userInfo').style.display = 'none';
+        updateStatus('Not authenticated', 'warning');
+        logConsole('Logged out', 'info');
+        clearTests();
+      });
+    }
+    
+    function renderTests() {
+      const testList = document.getElementById('testList');
+      testList.innerHTML = '';
+      
+      tests.forEach(test => {
+        const div = document.createElement('div');
+        div.className = 'test-item';
+        div.id = 'test-' + test.id;
+        div.innerHTML = `
+          <span class="test-name">${test.name}</span>
+          <button onclick="runSingleTest('${test.id}')">Run</button>
+        `;
+        testList.appendChild(div);
+      });
+    }
+    
+    function clearTests() {
+      document.getElementById('testList').innerHTML = '';
+    }
+    
+    async function runSingleTest(testId) {
+      if (!currentUser) {
+        logConsole('Please login first', 'error');
+        return;
+      }
+      
+      const test = tests.find(t => t.id === testId);
+      if (!test) return;
+      
+      const testEl = document.getElementById('test-' + testId);
+      testEl.className = 'test-item running';
+      
+      logConsole('Running: ' + test.name, 'info');
+      
+      try {
+        const result = await test.fn();
+        testEl.className = 'test-item ' + (result.passed ? 'passed' : 'failed');
+        logConsole((result.passed ? '✅ PASS: ' : '❌ FAIL: ') + test.name, result.passed ? 'success' : 'error');
+        if (result.message) {
+          logConsole('   ' + result.message, 'info');
+        }
+      } catch (error) {
+        testEl.className = 'test-item failed';
+        logConsole('❌ ERROR: ' + error.message, 'error');
+      }
+    }
+    
+    async function runAllTests() {
+      if (!currentUser) {
+        logConsole('Please login first', 'error');
+        return;
+      }
+      
+      logConsole('='.repeat(50), 'info');
+      logConsole('Running all tests...', 'info');
+      logConsole('='.repeat(50), 'info');
+      
+      for (const test of tests) {
+        await runSingleTest(test.id);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Delay between tests
+      }
+      
+      logConsole('='.repeat(50), 'info');
+      logConsole('All tests complete', 'success');
+    }
+    
+    // Test Functions
+    async function testCompanyAccess() {
+      // Try to read own company - should work
+      try {
+        const ownCompanyDoc = await db.collection('companies').doc(currentUser.companyId).get();
+        
+        if (!ownCompanyDoc.exists) {
+          return { passed: false, message: 'Cannot read own company' };
+        }
+      } catch (error) {
+        return { passed: false, message: 'Cannot read own company: ' + error.message };
+      }
+      
+      // Try to read other company - should fail
+      // We know there are two test companies, so try a different known ID
+      const otherCompanyId = currentUser.companyId === 'J3MAykAzkCuWwqIcuoDr' 
+        ? 'WaMD2dyXHibSy67hkI5d' 
+        : 'J3MAykAzkCuWwqIcuoDr';
+      
+      try {
+        const otherDoc = await db.collection('companies').doc(otherCompanyId).get();
+        return { passed: false, message: 'SECURITY BREACH: Can read other company!' };
+      } catch (error) {
+        if (error.code === 'permission-denied') {
+          return { passed: true, message: 'Correctly blocked from other company' };
+        }
+        return { passed: false, message: 'Unexpected error: ' + error.message };
+      }
+    }
+    
+    async function testClaimsIsolation() {
+      // Try to read own company claims - should work
+      try {
+        const ownClaims = await db.collection('companies').doc(currentUser.companyId)
+          .collection('claims').limit(1).get();
+      } catch (error) {
+        return { passed: false, message: 'Cannot read own claims: ' + error.message };
+      }
+      
+      // Try to read other company claims - should fail
+      const otherCompanyId = currentUser.companyId === 'J3MAykAzkCuWwqIcuoDr' 
+        ? 'WaMD2dyXHibSy67hkI5d' 
+        : 'J3MAykAzkCuWwqIcuoDr';
+      
+      try {
+        await db.collection('companies').doc(otherCompanyId).collection('claims').get();
+        return { passed: false, message: 'SECURITY BREACH: Can read other company claims!' };
+      } catch (error) {
+        if (error.code === 'permission-denied') {
+          return { passed: true, message: 'Correctly blocked from other company claims' };
+        }
+        return { passed: false, message: 'Unexpected error: ' + error.message };
+      }
+    }
+    
+    async function testUserCreation() {
+      try {
+        await db.collection('users').add({
+          email: 'hacker@test.com',
+          fullName: 'Hacker',
+          role: 'admin',
+          companyId: currentUser.companyId,
+          isActive: true,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        return { passed: false, message: 'SECURITY BREACH: User created without Cloud Function!' };
+      } catch (error) {
+        if (currentUser.role === 'driver') {
+          return { passed: true, message: 'Driver correctly blocked from creating users' };
+        } else {
+          return { passed: true, message: 'Direct user creation blocked (use Cloud Functions)' };
+        }
+      }
+    }
+    
+    async function testCompanyUpdate() {
+      try {
+        await db.collection('companies').doc(currentUser.companyId).update({
+          name: 'HACKED COMPANY'
+        });
+        
+        if (currentUser.role === 'driver') {
+          return { passed: false, message: 'SECURITY BREACH: Driver updated company!' };
+        } else {
+          return { passed: true, message: 'Admin can update company' };
+        }
+      } catch (error) {
+        if (currentUser.role === 'driver') {
+          return { passed: true, message: 'Driver correctly blocked from updating company' };
+        } else {
+          return { passed: false, message: 'Admin should be able to update company' };
+        }
+      }
+    }
+    
+    async function testRoleChange() {
+      // Try to change role to opposite of current role
+      const newRole = currentUser.role === 'admin' ? 'driver' : 'admin';
+      
+      try {
+        await db.collection('users').doc(currentUser.uid).update({
+          role: newRole
+        });
+        
+        return { passed: false, message: `SECURITY BREACH: User changed own role from ${currentUser.role} to ${newRole}!` };
+      } catch (error) {
+        if (error.code === 'permission-denied') {
+          return { passed: true, message: 'Correctly blocked role change' };
+        }
+        return { passed: false, message: 'Unexpected error: ' + error.message };
+      }
+    }
+    
+    async function testCompanyChange() {
+      try {
+        await db.collection('users').doc(currentUser.uid).update({
+          companyId: 'evil-company-id'
+        });
+        
+        return { passed: false, message: 'SECURITY BREACH: User changed companyId!' };
+      } catch (error) {
+        return { passed: true, message: 'Correctly blocked companyId change' };
+      }
+    }
+    
+    function logConsole(message, type = 'info') {
+      const consoleEl = document.getElementById('console');
+      const line = document.createElement('div');
+      line.className = 'console-line ' + type;
+      line.textContent = message;
+      consoleEl.appendChild(line);
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+    
+    function clearConsole() {
+      document.getElementById('console').innerHTML = '<div class="console-line info">Console cleared...</div>';
+    }
+    
+    function updateStatus(text, type) {
+      const statusEl = document.getElementById('statusText');
+      statusEl.textContent = text;
+      statusEl.style.color = type === 'success' ? '#4ec9b0' : type === 'error' ? '#f48771' : '#dcdcaa';
+    }
+  </script>
+</body>
+</html>

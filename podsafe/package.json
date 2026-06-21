@@ -1,0 +1,22 @@
+{
+  "name": "podsafe-security-tests",
+  "version": "1.0.0",
+  "description": "Security rules testing for PODSafe",
+  "main": "test_security_rules.js",
+  "scripts": {
+    "test:security": "node test_security_rules.js",
+    "test:security:clean": "node test_security_rules.js --cleanup",
+    "setup:test-data": "node setup_test_data.js"
+  },
+  "keywords": [
+    "podsafe",
+    "security",
+    "firebase",
+    "testing"
+  ],
+  "author": "PODSafe Team",
+  "license": "ISC",
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

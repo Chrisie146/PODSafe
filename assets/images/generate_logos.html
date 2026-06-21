@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PODSafe Logo Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #0A7E8C;
+            text-align: center;
+        }
+        .canvas-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        canvas {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        canvas:hover {
+            transform: scale(1.02);
+            border-color: #0A7E8C;
+        }
+        button {
+            background-color: #0A7E8C;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background-color: #086b77;
+        }
+        .instructions {
+            background-color: #e6f7f9;
+            padding: 15px;
+            border-left: 4px solid #0A7E8C;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .preview {
+            display: inline-block;
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚚 PODSafe Logo Generator</h1>
+        
+        <div class="instructions">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Click the "Download" buttons below each image</li>
+                <li>Save as <code>logo.png</code> and <code>splash_logo.png</code></li>
+                <li>Place both files in <code>assets/images/</code> folder</li>
+                <li>Run: <code>flutter pub get</code></li>
+                <li>Run: <code>flutter pub run flutter_launcher_icons</code></li>
+                <li>Run: <code>flutter pub run flutter_native_splash:create</code></li>
+            </ol>
+        </div>
+
+        <div class="canvas-section">
+            <h2>App Icon (1024x1024px)</h2>
+            <p>This will be your app icon on the home screen</p>
+            <div class="preview">
+                <canvas id="icon" width="1024" height="1024" style="max-width: 400px; height: auto;"></canvas>
+            </div>
+            <br>
+            <button onclick="downloadIcon()">📥 Download as logo.png</button>
+        </div>
+
+        <div class="canvas-section">
+            <h2>Splash Logo (512x512px)</h2>
+            <p>This will be displayed on the splash screen</p>
+            <div class="preview">
+                <canvas id="splash" width="512" height="512" style="max-width: 400px; height: auto;"></canvas>
+            </div>
+            <br>
+            <button onclick="downloadSplash()">📥 Download as splash_logo.png</button>
+        </div>
+
+        <div class="canvas-section">
+            <h2>Customize (Optional)</h2>
+            <label>Logo Text: <input type="text" id="logoText" value="PS" maxlength="4"></label>
+            <button onclick="regenerate()">🔄 Regenerate Logos</button>
+        </div>
+    </div>
+
+    <script>
+        function createIcon() {
+            const canvas = document.getElementById('icon');
+            const ctx = canvas.getContext('2d');
+            const text = document.getElementById('logoText').value || 'PS';
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, 1024, 1024);
+            
+            // Background
+            ctx.fillStyle = '#0A7E8C';
+            ctx.fillRect(0, 0, 1024, 1024);
+            
+            // Add subtle gradient
+            const gradient = ctx.createRadialGradient(512, 512, 0, 512, 512, 700);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.1)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 1024, 1024);
+            
+            // Text shadow
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 5;
+            
+            // Text
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 400px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 512, 512);
+        }
+        
+        function createSplash() {
+            const canvas = document.getElementById('splash');
+            const ctx = canvas.getContext('2d');
+            const text = document.getElementById('logoText').value || 'PS';
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, 512, 512);
+            
+            // Background
+            ctx.fillStyle = '#0A7E8C';
+            ctx.fillRect(0, 0, 512, 512);
+            
+            // Add subtle gradient
+            const gradient = ctx.createRadialGradient(256, 256, 0, 256, 256, 350);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.1)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 512, 512);
+            
+            // Text shadow
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 5;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 3;
+            
+            // Text
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 200px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 256, 256);
+        }
+        
+        function downloadIcon() {
+            const canvas = document.getElementById('icon');
+            const link = document.createElement('a');
+            link.download = 'logo.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        function downloadSplash() {
+            const canvas = document.getElementById('splash');
+            const link = document.createElement('a');
+            link.download = 'splash_logo.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        function regenerate() {
+            createIcon();
+            createSplash();
+        }
+        
+        // Generate on page load
+        window.onload = function() {
+            createIcon();
+            createSplash();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,276 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================================
+    // RBAC-ENABLED FIRESTORE SECURITY RULES
+    // Multi-tenant with Role-Based Access Control
+    // ============================================================
+    
+    // HELPER FUNCTIONS
+    // ============================================================
+    
+    // Check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Get user data from users collection
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Check if user belongs to a specific company (tenant isolation)
+    function belongsToCompany(companyId) {
+      return isSignedIn() && getUserData().companyId == companyId;
+    }
+    
+    // Check if user has a specific role
+    function hasRole(role) {
+      return isSignedIn() && getUserData().role == role;
+    }
+    
+    // Check if user has any of the specified roles
+    function hasAnyRole(roles) {
+      return isSignedIn() && getUserData().role in roles;
+    }
+    
+    // Check if user is active
+    function isActive() {
+      return isSignedIn() && getUserData().isActive == true;
+    }
+    
+    // Check if user is admin in their company
+    function isAdmin() {
+      return hasRole('admin') && isActive();
+    }
+    
+    // Check if driver is approved
+    function isApprovedDriver() {
+      return hasRole('driver') && 
+             isActive() && 
+             getUserData().approvalStatus == 'approved';
+    }
+    
+    // Check if user can manage deliveries (admin, manager, logistics)
+    function canManageDeliveries() {
+      return isActive() && hasAnyRole(['admin', 'manager', 'logistics']);
+    }
+    
+    // Check if user can view financial data (admin, manager, accountant)
+    function canViewFinance() {
+      return isActive() && hasAnyRole(['admin', 'manager', 'accountant']);
+    }
+    
+    // Check if document belongs to user's company
+    function isCompanyDocument(resourceData) {
+      return resourceData.companyId == getUserData().companyId;
+    }
+    
+    // ============================================================
+    // USERS COLLECTION - User Management (RBAC)
+    // ============================================================
+    
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      
+      // Admins can read all users in their company
+      allow read: if isAdmin() && 
+                     get(/databases/$(database)/documents/users/$(userId)).data.companyId == getUserData().companyId;
+      
+      // Users can update their own profile (limited fields only)
+      allow update: if isSignedIn() && 
+                       request.auth.uid == userId &&
+                       // Prevent users from changing their own role, companyId, or isActive status
+                       request.resource.data.role == resource.data.role &&
+                       request.resource.data.companyId == resource.data.companyId &&
+                       request.resource.data.isActive == resource.data.isActive;
+      
+      // Only admins can create users in their company
+      allow create: if isAdmin() && 
+                       request.resource.data.companyId == getUserData().companyId;
+      
+      // Anyone can create during registration (special case)
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      
+      // Only admins can update user roles, status, and company assignment
+      allow update: if isAdmin() && 
+                       resource.data.companyId == getUserData().companyId &&
+                       request.resource.data.companyId == getUserData().companyId;
+      
+      // No hard deletes - only deactivation
+      allow delete: if false;
+    }
+    
+    // ============================================================
+    // COMPANIES COLLECTION
+    // ============================================================
+    
+    match /companies/{companyId} {
+      // Users can read their own company data
+      allow read: if isSignedIn() && belongsToCompany(companyId);
+      
+      // Allow read during registration
+      allow read: if true;
+      
+      // Anyone can create (registration)
+      allow create: if isSignedIn();
+      
+      // Only admins can update company data
+      allow update: if isAdmin() && belongsToCompany(companyId);
+      
+      // No deletion
+      allow delete: if false;
+    }
+    
+    // ============================================================
+    // DELIVERIES COLLECTION - Multi-tenant RBAC
+    // ============================================================
+    
+    match /deliveries/{deliveryId} {
+      // Read access:
+      // - Admin, Manager, Logistics, Accountant: All deliveries in company
+      // - Driver: Only assigned deliveries (must be approved)
+      // - Filing Clerk: All deliveries in company
+      allow read: if isActive() && (
+        (hasAnyRole(['admin', 'manager', 'logistics', 'accountant', 'filing_clerk']) && 
+         isCompanyDocument(resource.data)) ||
+        (isApprovedDriver() && 
+         resource.data.driverId == request.auth.uid &&
+         isCompanyDocument(resource.data))
+      );
+      
+      // Create/Update: Admin, Manager, Logistics only
+      allow create, update: if canManageDeliveries() && 
+                               isCompanyDocument(request.resource.data);
+      
+      // Drivers can update status and POD fields for assigned deliveries
+      allow update: if isApprovedDriver() &&
+                       resource.data.driverId == request.auth.uid &&
+                       isCompanyDocument(resource.data) &&
+                       // Only allow updating delivery status fields
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['status', 'podUrl', 'signatureUrl', 'deliveredAt', 'notes', 'completedAt']);
+      
+      // Delete: Admin only
+      allow delete: if isAdmin() && isCompanyDocument(resource.data);
+    }
+    
+    // ============================================================
+    // PODS (Proof of Delivery) COLLECTION
+    // ============================================================
+    
+    match /pods/{podId} {
+      // Read: All active staff in company, plus assigned drivers
+      allow read: if isActive() && (
+        (hasAnyRole(['admin', 'manager', 'logistics', 'accountant', 'filing_clerk']) && 
+         isCompanyDocument(resource.data)) ||
+        (isApprovedDriver() && 
+         resource.data.driverId == request.auth.uid &&
+         isCompanyDocument(resource.data))
+      );
+      
+      // Create: Drivers and filing clerks can upload PODs
+      allow create: if isActive() &&
+                       isCompanyDocument(request.resource.data) &&
+                       hasAnyRole(['admin', 'manager', 'filing_clerk', 'driver']);
+      
+      // Update: Admin, Manager, Filing Clerk (for tagging/metadata)
+      allow update: if isActive() &&
+                       isCompanyDocument(resource.data) &&
+                       hasAnyRole(['admin', 'manager', 'filing_clerk']);
+      
+      // Delete: Admin only
+      allow delete: if isAdmin() && isCompanyDocument(resource.data);
+    }
+    
+    // ============================================================
+    // CUSTOMERS COLLECTION
+    // ============================================================
+    
+    match /customers/{customerId} {
+      // Read: All active users in company
+      allow read: if isActive() && isCompanyDocument(resource.data);
+      
+      // Create/Update: Admin, Manager, Logistics
+      allow create, update: if isActive() &&
+                               hasAnyRole(['admin', 'manager', 'logistics']) &&
+                               isCompanyDocument(request.resource.data);
+      
+      // Delete: Admin only
+      allow delete: if isAdmin() && isCompanyDocument(resource.data);
+    }
+    
+    // ============================================================
+    // CLAIMS COLLECTION
+    // ============================================================
+    
+    match /claims/{claimId} {
+      // Read: Admin, Manager, Accountant, and the claiming driver
+      allow read: if isActive() && (
+        (hasAnyRole(['admin', 'manager', 'accountant']) && 
+         isCompanyDocument(resource.data)) ||
+        (resource.data.driverId == request.auth.uid &&
+         isCompanyDocument(resource.data))
+      );
+      
+      // Create: Approved drivers only
+      allow create: if isApprovedDriver() &&
+                       request.resource.data.driverId == request.auth.uid &&
+                       isCompanyDocument(request.resource.data);
+      
+      // Update: Admin and Manager can approve/reject
+      allow update: if isActive() &&
+                       isCompanyDocument(resource.data) &&
+                       hasAnyRole(['admin', 'manager']);
+      
+      // Delete: Admin only
+      allow delete: if isAdmin() && isCompanyDocument(resource.data);
+    }
+    
+    // ============================================================
+    // NOTIFICATIONS COLLECTION
+    // ============================================================
+    
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // System/Admin can create
+      allow create: if isAdmin();
+      
+      // Users can update (mark as read)
+      allow update: if isSignedIn() && 
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['read', 'readAt']);
+      
+      // Users can delete their own
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ============================================================
+    // POD TOKENS (for public QR code access)
+    // ============================================================
+    
+    match /pod_tokens/{tokenId} {
+      // Anyone with valid token can read
+      allow read: if true;
+      
+      // Only system can create
+      allow create: if canManageDeliveries();
+      
+      // No updates or deletes
+      allow update, delete: if false;
+    }
+    
+    // ============================================================
+    // DEFAULT DENY ALL
+    // ============================================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

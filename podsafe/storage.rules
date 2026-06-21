@@ -1,0 +1,301 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isActiveUser() {
+      return isAuthenticated() && 
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isActive == true;
+    }
+    
+    function belongsToCompany(companyId) {
+      return isAuthenticated() && 
+             isActiveUser() &&
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && 
+             isActiveUser() &&
+             request.auth.uid == userId;
+    }
+    
+    function isSameCompany(userId) {
+      return isAuthenticated() && 
+             isActiveUser() &&
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.companyId == 
+             firestore.get(/databases/(default)/documents/users/$(userId)).data.companyId;
+    }
+
+    // ============================================
+    // FILE VALIDATION FUNCTIONS
+    // ============================================
+    
+    function isValidImageSize() {
+      return request.resource.size < 10 * 1024 * 1024; // 10MB max
+    }
+
+    function isValidImageType() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isValidPDFSize() {
+      return request.resource.size < 5 * 1024 * 1024; // 5MB max
+    }
+
+    function isValidPDFType() {
+      return request.resource.contentType == 'application/pdf';
+    }
+    
+    function isValidDocumentType() {
+      return request.resource.contentType.matches('image/.*') || 
+             request.resource.contentType == 'application/pdf';
+    }
+    
+    function isValidDocumentSize() {
+      return request.resource.size < 10 * 1024 * 1024; // 10MB max for documents
+    }
+
+    // ============================================
+    // COMPANY DELIVERIES - THIRD PARTY DOCUMENTS
+    // ============================================
+    // Path: companies/{companyId}/deliveries/{deliveryId}/third_party/{fileName}
+    // HIGHEST PRIORITY - Must be before other delivery rules
+    
+    match /companies/{companyId}/deliveries/{deliveryId}/third_party/{fileName} {
+      // Read: Anyone with link (for public sharing)
+      allow read: if true;
+      
+      // Write: Only with valid, unused external token
+      allow write: if firestore.exists(/databases/(default)/documents/external_delivery_tokens/$(request.auth.token.token_id)) &&
+                     firestore.get(/databases/(default)/documents/external_delivery_tokens/$(request.auth.token.token_id)).data.deliveryId == deliveryId &&
+                     firestore.get(/databases/(default)/documents/external_delivery_tokens/$(request.auth.token.token_id)).data.isUsed == false &&
+                     (firestore.get(/databases/(default)/documents/external_delivery_tokens/$(request.auth.token.token_id)).data.expiresAt == null ||
+                      firestore.get(/databases/(default)/documents/external_delivery_tokens/$(request.auth.token.token_id)).data.expiresAt > request.time) &&
+                     isValidDocumentType() &&
+                     isValidDocumentSize();
+    }
+
+    // ============================================
+    // POD SIGNATURES (Root-level)
+    // ============================================
+    // Path: signatures/{deliveryId}_{uuid}.png
+    
+    match /signatures/{fileName} {
+      // Read: Authenticated active users
+      allow read: if isAuthenticated() && isActiveUser();
+      
+      // Write: Authenticated active users (driver or admin) with valid image
+      allow write: if isAuthenticated() && 
+                      isActiveUser() &&
+                      isValidImageType() && 
+                      isValidImageSize();
+    }
+    
+    // ============================================
+    // POD PHOTOS (Root-level)
+    // ============================================
+    // Path: photos/{deliveryId}_{uuid}.jpg
+    
+    match /photos/{fileName} {
+      // Read: Authenticated active users
+      allow read: if isAuthenticated() && isActiveUser();
+      
+      // Write: Authenticated active users (driver or admin) with valid image
+      allow write: if isAuthenticated() && 
+                      isActiveUser() &&
+                      isValidImageType() && 
+                      isValidImageSize();
+    }
+    
+    // ============================================
+    // POD PDFS (Root-level)
+    // ============================================
+    // Path: pdfs/{deliveryId}_{uuid}.pdf
+    
+    match /pdfs/{fileName} {
+      // Read: Authenticated active users
+      allow read: if isAuthenticated() && isActiveUser();
+      
+      // Write: Authenticated active users (driver or admin) with valid PDF
+      allow write: if isAuthenticated() && 
+                      isActiveUser() &&
+                      isValidPDFType() && 
+                      isValidPDFSize();
+    }
+    
+    // ============================================
+    // POD PHOTOS, DOCUMENTS, AND SIGNATURES
+    // ============================================
+    // Path: pods/{deliveryId}/{fileName} OR pods/{deliveryId}/photos/{fileName}
+    
+    match /pods/{deliveryId}/{allPaths=**} {
+      // Read: Authenticated active users only (for claims investigation)
+      allow read: if isAuthenticated() && isActiveUser();
+      
+      // Write: Must be authenticated, active, valid file, and (assigned driver or admin)
+      allow write: if isAuthenticated() && 
+                      isActiveUser() &&
+                      isValidImageType() && 
+                      isValidImageSize() &&
+                      (firestore.get(/databases/(default)/documents/deliveries/$(deliveryId)).data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ============================================
+    // COMPANY-SCOPED POD STORAGE
+    // ============================================
+    // Path: companies/{companyId}/pods/{podId}/{fileName}
+    
+    match /companies/{companyId}/pods/{podId}/{allPaths=**} {
+      // Read: Company members only
+      allow read: if belongsToCompany(companyId);
+      
+      // Write: Company members with valid POD ownership
+      allow write: if belongsToCompany(companyId) &&
+                      isValidDocumentType() &&
+                      isValidDocumentSize() &&
+                      (firestore.get(/databases/(default)/documents/companies/$(companyId)/pods/$(podId)).data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ============================================
+    // USER PROFILE IMAGES
+    // ============================================
+    
+    match /users/{userId}/profile/{fileName} {
+      // Write: Users can upload their own profile images
+      allow write: if isOwner(userId) && 
+                      isValidImageSize() && 
+                      isValidImageType();
+      
+      // Read: Authenticated active users can view profile images
+      allow read: if isAuthenticated() && isActiveUser();
+    }
+    
+    // Profiles directory (alternative path) - for backwards compatibility
+    match /profiles/{userId}/{fileName} {
+      allow write: if isOwner(userId) && 
+                      isValidImageSize() && 
+                      isValidImageType();
+      allow read: if isAuthenticated() && isActiveUser();
+    }
+
+    // ============================================
+    // COMPANY LOGOS AND ASSETS
+    // ============================================
+    
+    match /companies/{companyId}/assets/{allPaths=**} {
+      // Write: Admins of the company can upload/update assets
+      allow write: if isAdmin() && 
+                      belongsToCompany(companyId) && 
+                      isValidImageSize() && 
+                      isValidImageType();
+      
+      // Read: Anyone in the company can read assets
+      allow read: if belongsToCompany(companyId);
+    }
+
+    // ============================================
+    // COMPANY BRANDING (Logos, themes, etc.)
+    // ============================================
+    
+    match /companies/{companyId}/branding/{allPaths=**} {
+      // Write: Admins of the company only
+      allow write: if isAdmin() && 
+                      belongsToCompany(companyId) && 
+                      isValidImageSize() && 
+                      isValidImageType();
+      
+      // Read: Company members can read branding assets
+      allow read: if belongsToCompany(companyId);
+    }
+
+    // ============================================
+    // DELIVERY DOCUMENTS (Legacy path)
+    // ============================================
+    
+    match /deliveries/{deliveryId}/{allPaths=**} {
+      // Read: Users who have access to the delivery (same company)
+      allow read: if isAuthenticated() &&
+                     isActiveUser() &&
+                     (firestore.get(/databases/(default)/documents/deliveries/$(deliveryId)).data.driverId == request.auth.uid ||
+                      isAdmin());
+      
+      // Write: Driver assigned to delivery or admin
+      allow write: if isAuthenticated() && 
+                      isActiveUser() &&
+                      isValidDocumentType() &&
+                      isValidDocumentSize() &&
+                      (firestore.get(/databases/(default)/documents/deliveries/$(deliveryId)).data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ============================================
+    // CLAIM EVIDENCE (Photos, Signatures, Documents)
+    // ============================================
+    
+    match /companies/{companyId}/claims/{claimId}/{allPaths=**} {
+      // Read: Company members only
+      allow read: if belongsToCompany(companyId);
+      
+      // Write: Claim owner or admin with valid file
+      allow write: if belongsToCompany(companyId) && 
+                      isValidDocumentType() &&
+                      isValidDocumentSize() &&
+                      (!firestore.exists(/databases/(default)/documents/companies/$(companyId)/claims/$(claimId)) ||
+                       firestore.get(/databases/(default)/documents/companies/$(companyId)/claims/$(claimId)).data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ============================================
+    // VEHICLE DOCUMENTS (Photos, registration, insurance, etc.)
+    // ============================================
+    
+    match /companies/{companyId}/vehicles/{vehicleId}/{allPaths=**} {
+      // Read: Company members only
+      allow read: if belongsToCompany(companyId);
+      
+      // Write: Company members with valid document
+      allow write: if belongsToCompany(companyId) && 
+                      isValidDocumentType() &&
+                      isValidDocumentSize();
+    }
+
+    // ============================================
+    // TEMPORARY FILES (User-specific)
+    // ============================================
+    
+    match /temp/{userId}/{allPaths=**} {
+      // Write: Users can upload temporary files to their own space
+      allow write: if isAuthenticated() && 
+                      isActiveUser() &&
+                      request.auth.uid == userId &&
+                      isValidDocumentSize();
+      
+      // Read: Only the uploader can read temporary files
+      allow read: if isAuthenticated() && 
+                     isActiveUser() &&
+                     request.auth.uid == userId;
+    }
+    
+    // ============================================
+    // DEFAULT DENY ALL OTHER PATHS
+    // ============================================
+    
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"version":3,"file":"statusMap.d.ts","sourceRoot":"","sources":["../../src/util/statusMap.ts"],"names":[],"mappings":"AAIA,OAAO,EAAE,cAAc,EAAE,MAAM,UAAU,CAAC;AAW1C,wBAAgB,oBAAoB,CAAC,QAAQ,CAAC,EAAE,MAAM,GAAG,cAAc,CAgCtE;AAMD,wBAAgB,oBAAoB,CAAC,MAAM,EAAE,cAAc,GAAG,MAAM,CAcnE;AAKD,wBAAgB,oBAAoB,CAClC,SAAS,EAAE,cAAc,EACzB,SAAS,EAAE,cAAc,GACxB,OAAO,CAKT"}

@@ -1,0 +1,185 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function belongsToCompany(companyId) {
+      return isAuthenticated() && 
+             firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.companyId == companyId;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // File validation functions
+    function isValidImageSize() {
+      return request.resource.size < 10 * 1024 * 1024; // 10MB max
+    }
+
+    function isValidImageType() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isValidPDFSize() {
+      return request.resource.size < 5 * 1024 * 1024; // 5MB max
+    }
+
+    function isValidPDFType() {
+      return request.resource.contentType == 'application/pdf';
+    }
+
+    // ============================================
+    // COMPANY DELIVERIES - THIRD PARTY DOCUMENTS (HIGHEST PRIORITY)
+    // ============================================
+    // Path: companies/{companyId}/deliveries/{deliveryId}/third_party/*
+    // Used for: Third-party document uploads (public links)
+    // NOTE: This must be placed BEFORE other delivery rules to match correctly
+    match /companies/{companyId}/deliveries/{deliveryId}/third_party/{fileName} {
+      // Read: Anyone can read (no auth required for public sharing)
+      allow read: if true;
+      
+      // Write: TEMPORARY - Allow all uploads to test (will add validation after)
+      allow write: if true;
+    }
+
+    // ============================================
+    // POD PHOTOS, DOCUMENTS, AND SIGNATURES
+    // ============================================
+    // Path: pods/{deliveryId}/{fileName} OR pods/{deliveryId}/photos/{fileName} OR pods/{deliveryId}/documents/{fileName}
+    // Used for: Proof of Delivery photos, scanned documents, and signatures
+    match /pods/{deliveryId}/{allPaths=**} {
+      // Read: Any authenticated user can read (for claims investigation)
+      allow read: if isAuthenticated();
+      
+      // Write: Must be authenticated, valid image, and driver assigned to delivery
+      allow write: if isAuthenticated() && 
+                      isValidImageSize() && 
+                      isValidImageType() &&
+                      (firestore.get(/databases/(default)/documents/deliveries/$(deliveryId)).data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ============================================
+    // USER PROFILE IMAGES
+    // ============================================
+    match /users/{userId}/profile/{fileName} {
+      // Users can upload their own profile images
+      allow write: if isOwner(userId) && 
+                      isValidImageSize() && 
+                      isValidImageType();
+      
+      // Authenticated users can read profile images
+      allow read: if isAuthenticated();
+    }
+    
+    // Profiles directory (alternative path) - for backwards compatibility
+    match /profiles/{userId}/{fileName} {
+      allow write: if isOwner(userId) && 
+                      isValidImageSize() && 
+                      isValidImageType();
+      allow read: if isAuthenticated();
+    }
+
+    // ============================================
+    // COMPANY LOGOS AND ASSETS
+    // ============================================
+    match /companies/{companyId}/assets/{allPaths=**} {
+      // Admins of the company can upload/update assets
+      allow write: if isAdmin() && 
+                      belongsToCompany(companyId) && 
+                      isValidImageSize() && 
+                      isValidImageType();
+      
+      // Anyone in the company can read assets
+      allow read: if belongsToCompany(companyId);
+    }
+
+    // ============================================
+    // COMPANY BRANDING (Logos, themes, etc.)
+    // ============================================
+    match /companies/{companyId}/branding/{allPaths=**} {
+      // Admins of the company can upload/update branding assets
+      allow write: if isAdmin() && 
+                      belongsToCompany(companyId) && 
+                      isValidImageSize() && 
+                      isValidImageType();
+      
+      // Anyone in the company can read branding assets
+      allow read: if belongsToCompany(companyId);
+    }
+
+    // ============================================
+    // DELIVERY DOCUMENTS
+    // ============================================
+    match /deliveries/{deliveryId}/{allPaths=**} {
+      // Read: Users in the same company as the delivery
+      allow read: if isAuthenticated() &&
+                     (firestore.get(/databases/(default)/documents/deliveries/$(deliveryId)).data.driverId == request.auth.uid ||
+                      isAdmin());
+      
+      // Write: Driver assigned to delivery or admin
+      allow write: if isAuthenticated() && 
+                      isValidImageSize() &&
+                      (firestore.get(/databases/(default)/documents/deliveries/$(deliveryId)).data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ============================================
+    // CLAIM EVIDENCE (Photos, Signatures, Documents)
+    // ============================================
+    match /companies/{companyId}/claims/{claimId}/{allPaths=**} {
+      // Read: Anyone in the company can read claim evidence
+      allow read: if belongsToCompany(companyId);
+      
+      // Write: Driver who created the claim or admin can upload evidence
+      // Allow uploading to new claims (before document is created)
+      allow write: if belongsToCompany(companyId) && 
+                      isValidImageSize() && 
+                      isValidImageType() &&
+                      (!firestore.exists(/databases/(default)/documents/companies/$(companyId)/claims/$(claimId)) ||
+                       firestore.get(/databases/(default)/documents/companies/$(companyId)/claims/$(claimId)).data.driverId == request.auth.uid ||
+                       isAdmin());
+    }
+
+    // ============================================
+    // VEHICLE DOCUMENTS (Photos, registration, etc.)
+    // ============================================
+    match /companies/{companyId}/vehicles/{vehicleId}/{allPaths=**} {
+      // Read: Anyone in the company can read vehicle documents
+      allow read: if belongsToCompany(companyId);
+      
+      // Write: Anyone in the company can upload vehicle documents
+      allow write: if belongsToCompany(companyId) && 
+                      (isValidImageSize() || isValidPDFSize()) && 
+                      (request.resource.contentType.matches('image/.*') || 
+                       request.resource.contentType == 'application/pdf');
+    }
+
+    // ============================================
+    // TEMPORARY FILES
+    // ============================================
+    match /temp/{userId}/{allPaths=**} {
+      // Users can upload temporary files
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+      // Only the uploader can read temporary files
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Default deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

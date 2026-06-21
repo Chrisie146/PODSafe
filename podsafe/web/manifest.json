@@ -1,0 +1,76 @@
+{
+    "name": "PODSafe Admin - Delivery Management System",
+    "short_name": "PODSafe",
+    "start_url": "./",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#ffffff",
+    "theme_color": "#667eea",
+    "description": "Professional delivery management system. Create deliveries, track proof of delivery, manage drivers, and handle claims with PODSafe Admin Dashboard.",
+    "categories": ["business", "productivity"],
+    "screenshots": [
+        {
+            "src": "icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "icons": [
+        {
+            "src": "icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Dashboard",
+            "short_name": "Dashboard",
+            "description": "View admin dashboard and deliveries",
+            "url": "./?page=dashboard",
+            "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+        },
+        {
+            "name": "Deliveries",
+            "short_name": "Deliveries",
+            "description": "Manage deliveries",
+            "url": "./?page=deliveries",
+            "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+        },
+        {
+            "name": "Claims",
+            "short_name": "Claims",
+            "description": "Review and process claims",
+            "url": "./?page=claims",
+            "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+        }
+    ],
+    "prefer_related_applications": false
+}

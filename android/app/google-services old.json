@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "526380867753",
+    "project_id": "podsafe-production",
+    "storage_bucket": "podsafe-production.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:526380867753:android:16c688d5b07f3478c889b8",
+        "android_client_info": {
+          "package_name": "com.example.podsafe"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAQasW3BFJ861JGAVbtODe5WhgCS12Jso"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
