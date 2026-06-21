@@ -1637,8 +1637,9 @@ class _CreateDeliveryScreenState extends State<CreateDeliveryScreen> {
                             DateTime(DateTime.now().year - 5),
                         lastDate: DateTime.now(),
                       );
-                      if (date != null)
+                      if (date != null) {
                         setState(() => _invoiceDate = date);
+                      }
                     },
                     child: InputDecorator(
                       decoration: InputDecoration(

@@ -15,30 +15,31 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> 
+class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  
+
   late AnimationController _animationController;
   late Animation<double> _logoAnimation;
   late Animation<double> _textAnimation;
+  String _statusMessage = 'Starting up…';
 
   @override
   void initState() {
     super.initState();
-    
+
     _animationController = AnimationController(
-      duration: const Duration(seconds: 2),
+      duration: const Duration(milliseconds: 1400),
       vsync: this,
     );
-    
+
     _logoAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
     ).animate(CurvedAnimation(
       parent: _animationController,
-      curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+      curve: const Interval(0.0, 0.6, curve: Curves.easeOutBack),
     ));
-    
+
     _textAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
@@ -46,7 +47,7 @@ class _SplashScreenState extends State<SplashScreen>
       parent: _animationController,
       curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
     ));
-    
+
     _initializeApp();
   }
 
@@ -68,15 +69,19 @@ class _SplashScreenState extends State<SplashScreen>
       return;
     }
     
-    // Initialize auth provider (only for non-public routes)
-    context.read<AuthProvider>().initialize();
-    
     // Start animations
     _animationController.forward();
-    
-    // Wait for animations to complete
-    await Future.delayed(const Duration(seconds: 3));
-    
+
+    if (mounted) setState(() => _statusMessage = 'Signing you in…');
+
+    // Initialize auth provider (only for non-public routes)
+    context.read<AuthProvider>().initialize();
+
+    // Keep a short, snappy minimum so the brand shows without feeling slow.
+    await Future.delayed(const Duration(milliseconds: 1500));
+
+    if (mounted) setState(() => _statusMessage = 'Loading your workspace…');
+
     // Navigate based on auth state
     if (mounted) {
       _navigateToNextScreen();
@@ -124,7 +129,9 @@ class _SplashScreenState extends State<SplashScreen>
     final onboardingCompleted = await OnboardingService.isOnboardingCompleted();
     
     debugPrint('✅ Onboarding completed: $onboardingCompleted');
-    
+
+    if (!mounted) return;
+
     if (!onboardingCompleted) {
       debugPrint('🚀 Showing onboarding screen');
       // Show onboarding
@@ -162,97 +169,143 @@ class _SplashScreenState extends State<SplashScreen>
     return Scaffold(
       backgroundColor: AppTheme.primaryColor,
       body: Container(
+        width: double.infinity,
+        height: double.infinity,
         decoration: const BoxDecoration(
           gradient: AppTheme.primaryGradient,
         ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Logo Animation
-              AnimatedBuilder(
-                animation: _logoAnimation,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: _logoAnimation.value,
-                    child: Opacity(
-                      opacity: _logoAnimation.value,
-                      child: Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 51),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
+        child: Stack(
+          children: [
+            // Centered brand block
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Logo
+                  AnimatedBuilder(
+                    animation: _logoAnimation,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: _logoAnimation.value.clamp(0.0, 1.0),
+                        child: Opacity(
+                          opacity: _logoAnimation.value.clamp(0.0, 1.0),
+                          child: child,
                         ),
-                        child: const Icon(
-                          Icons.local_shipping_rounded,
-                          size: 60,
-                          color: AppTheme.primaryColor,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              
-              const SizedBox(height: 32),
-              
-              // App Name Animation
-              AnimatedBuilder(
-                animation: _textAnimation,
-                builder: (context, child) {
-                  return Transform.translate(
-                    offset: Offset(0, 30 * (1 - _textAnimation.value)),
-                    child: Opacity(
-                      opacity: _textAnimation.value,
-                      child: Column(
-                        children: [
-                          const Text(
-                            'PODSafe',
-                            style: TextStyle(
-                              fontSize: 42,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Proof of Delivery Solution',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.white70,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 48),
-                          
-                          // Loading indicator
-                          SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.white.withValues(alpha: 204),
-                              ),
-                            ),
+                      );
+                    },
+                    child: Container(
+                      width: 116,
+                      height: 116,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.20),
+                            blurRadius: 28,
+                            offset: const Offset(0, 12),
                           ),
                         ],
                       ),
+                      child: const Icon(
+                        Icons.local_shipping_rounded,
+                        size: 58,
+                        color: AppTheme.primaryColor,
+                      ),
                     ),
-                  );
-                },
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // App name + tagline
+                  AnimatedBuilder(
+                    animation: _textAnimation,
+                    builder: (context, child) {
+                      return Transform.translate(
+                        offset: Offset(0, 24 * (1 - _textAnimation.value)),
+                        child: Opacity(
+                          opacity: _textAnimation.value.clamp(0.0, 1.0),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: Column(
+                      children: [
+                        const Text(
+                          'PODSafe',
+                          style: TextStyle(
+                            fontSize: 44,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'Proof of Delivery, Secured',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+
+            // Bottom progress + status + version
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 48,
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 180,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        minHeight: 4,
+                        backgroundColor: Colors.white.withValues(alpha: 0.20),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _statusMessage,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.white.withValues(alpha: 0.85),
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    '© ${DateTime.now().year} PODSafe',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

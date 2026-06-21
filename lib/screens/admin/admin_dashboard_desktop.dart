@@ -44,59 +44,361 @@ class _AdminDashboardDesktopState extends State<AdminDashboardDesktop> {
     _loadDashboardData();
   }
 
-  // Header dropdown menu builder
-  Widget _buildHeaderDropdown({
-    required String label,
-    required IconData icon,
-    required List<_DropdownMenuItem> items,
-  }) {
-    return PopupMenuButton<VoidCallback>(
-      offset: const Offset(0, 50),
-      tooltip: label,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.2),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18, color: Colors.white),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(
-              Icons.arrow_drop_down,
-              size: 20,
-              color: Colors.white,
-            ),
-          ],
+  // ---- Navigation helpers -------------------------------------------------
+
+  /// Push a named route, or run a custom action (e.g. open a screen / dialog).
+  void _go({String? route, VoidCallback? action}) {
+    if (action != null) {
+      action();
+    } else if (route != null) {
+      Navigator.pushNamed(context, route);
+    }
+  }
+
+  /// A section label inside the sidebar (e.g. "OPERATIONS").
+  Widget _buildNavSectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 16, 8),
+      child: Text(
+        label.toUpperCase(),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.1,
+          color: Colors.grey[500],
         ),
       ),
-      itemBuilder: (context) => items
-          .map((item) => PopupMenuItem<VoidCallback>(
-                value: item.onTap,
-                child: Row(
-                  children: [
-                    Icon(item.icon, size: 20, color: Colors.grey[700]),
-                    const SizedBox(width: 12),
-                    Text(item.label),
-                  ],
+    );
+  }
+
+  /// A single clickable navigation item in the sidebar.
+  Widget _buildNavItem({
+    required IconData icon,
+    required String label,
+    required Color primaryColor,
+    bool selected = false,
+    String? route,
+    VoidCallback? action,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Material(
+        color: selected ? primaryColor.withValues(alpha: 0.10) : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: selected ? null : () => _go(route: route, action: action),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: selected ? primaryColor : Colors.grey[600],
                 ),
-              ))
-          .toList(),
-      onSelected: (callback) => callback(),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? primaryColor : Colors.grey[800],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The persistent left navigation sidebar.
+  Widget _buildSidebar(AuthProvider authProvider, ThemeProvider themeProvider) {
+    final primaryColor = themeProvider.primaryColor;
+    final appName = themeProvider.appName;
+    final logoUrl = themeProvider.appLogoUrl;
+    final user = authProvider.currentUser;
+
+    return Container(
+      width: 264,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          right: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Brand header
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: logoUrl != null
+                      ? Image.network(
+                          logoUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              Icon(Icons.local_shipping_rounded, color: primaryColor, size: 22),
+                        )
+                      : Icon(Icons.local_shipping_rounded, color: primaryColor, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        appName,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: primaryColor,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        'Admin Console',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[500],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+
+          // Scrollable nav links
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 12),
+              children: [
+                _buildNavSectionLabel('Main'),
+                _buildNavItem(
+                  icon: Icons.dashboard_rounded,
+                  label: 'Dashboard',
+                  primaryColor: primaryColor,
+                  selected: true,
+                ),
+
+                _buildNavSectionLabel('Deliveries'),
+                _buildNavItem(
+                  icon: Icons.add_box_rounded,
+                  label: 'New Delivery',
+                  primaryColor: primaryColor,
+                  route: '/admin/deliveries/create',
+                ),
+                _buildNavItem(
+                  icon: Icons.local_shipping_rounded,
+                  label: 'All Deliveries',
+                  primaryColor: primaryColor,
+                  route: '/admin/deliveries',
+                ),
+                _buildNavItem(
+                  icon: Icons.receipt_long_rounded,
+                  label: 'Proof of Delivery',
+                  primaryColor: primaryColor,
+                  route: '/admin/pods',
+                ),
+                _buildNavItem(
+                  icon: Icons.map_rounded,
+                  label: 'Live Tracking',
+                  primaryColor: primaryColor,
+                  route: '/admin/live-tracking',
+                ),
+
+                _buildNavSectionLabel('Fleet'),
+                _buildNavItem(
+                  icon: Icons.people_rounded,
+                  label: 'Drivers',
+                  primaryColor: primaryColor,
+                  route: '/admin/drivers',
+                ),
+                _buildNavItem(
+                  icon: Icons.directions_car_rounded,
+                  label: 'Vehicles',
+                  primaryColor: primaryColor,
+                  action: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const VehicleManagementDesktop(),
+                    ),
+                  ),
+                ),
+
+                _buildNavSectionLabel('Customers & Items'),
+                _buildNavItem(
+                  icon: Icons.inventory_2_rounded,
+                  label: 'Item Catalog',
+                  primaryColor: primaryColor,
+                  route: '/admin/catalog',
+                ),
+                _buildNavItem(
+                  icon: Icons.person_add_rounded,
+                  label: 'Create Customer',
+                  primaryColor: primaryColor,
+                  action: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CustomerCreationScreen(),
+                    ),
+                  ),
+                ),
+                _buildNavItem(
+                  icon: Icons.upload_file_rounded,
+                  label: 'Import Customers',
+                  primaryColor: primaryColor,
+                  route: '/admin/customers/import',
+                ),
+                _buildNavItem(
+                  icon: Icons.cloud_download_rounded,
+                  label: 'Import from Abaserve',
+                  primaryColor: primaryColor,
+                  action: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AbaserveImportScreen(),
+                    ),
+                  ),
+                ),
+
+                _buildNavSectionLabel('Insights'),
+                _buildNavItem(
+                  icon: Icons.analytics_rounded,
+                  label: 'Analytics',
+                  primaryColor: primaryColor,
+                  route: '/admin/analytics',
+                ),
+                _buildNavItem(
+                  icon: Icons.table_chart_rounded,
+                  label: 'Reports',
+                  primaryColor: primaryColor,
+                  route: '/admin/reports',
+                ),
+
+                _buildNavSectionLabel('Support'),
+                _buildNavItem(
+                  icon: Icons.report_problem_rounded,
+                  label: 'Claims',
+                  primaryColor: primaryColor,
+                  action: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ClaimsDashboardScreen(),
+                    ),
+                  ),
+                ),
+                _buildNavItem(
+                  icon: Icons.chat_rounded,
+                  label: 'Messages',
+                  primaryColor: primaryColor,
+                  route: '/admin/chat',
+                ),
+              ],
+            ),
+          ),
+
+          // Bottom: settings / help / user
+          const Divider(height: 1),
+          _buildNavItem(
+            icon: Icons.settings_rounded,
+            label: 'Settings',
+            primaryColor: primaryColor,
+            action: () async {
+              final result = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AdminSettingsScreen(),
+                ),
+              );
+              if ((result == true || result == null) && mounted) {
+                _loadDashboardData();
+              }
+            },
+          ),
+          _buildNavItem(
+            icon: Icons.help_outline_rounded,
+            label: 'Help & Support',
+            primaryColor: primaryColor,
+            action: _showHelpDialog,
+          ),
+          const SizedBox(height: 8),
+          // User profile chip
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: primaryColor.withValues(alpha: 0.12),
+                    child: Text(
+                      (user?.fullName ?? 'A').characters.first.toUpperCase(),
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          user?.fullName ?? 'Admin',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          (user?.role.name ?? 'admin').replaceAll('_', ' ').toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.logout_rounded, size: 20, color: Colors.grey[600]),
+                    tooltip: 'Logout',
+                    onPressed: _showLogoutDialog,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -240,378 +542,107 @@ class _AdminDashboardDesktopState extends State<AdminDashboardDesktop> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
-    
+
     return Scaffold(
-      appBar: AppBar(
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-            tooltip: 'Analytics & Reports',
-          ),
-        ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // App Logo if available
-            if (themeProvider.appLogoUrl != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: SizedBox(
-                    height: 24,
-                    width: 24,
-                    child: Image.network(
-                      themeProvider.appLogoUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const Icon(Icons.image, size: 24, color: Colors.white),
-                    ),
-                  ),
+      backgroundColor: const Color(0xFFF5F6F8),
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Persistent navigation sidebar
+          _buildSidebar(authProvider, themeProvider),
+
+          // Main work area
+          Expanded(
+            child: Column(
+              children: [
+                _buildTopBar(themeProvider),
+                Expanded(
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : SingleChildScrollView(
+                          padding: const EdgeInsets.all(28),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Company & welcome card
+                              _buildCombinedCompanyWelcomeCard(authProvider, themeProvider),
+
+                              const SizedBox(height: 28),
+
+                              const Text(
+                                "Today's Overview",
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              _buildStatsGrid(),
+
+                              const SizedBox(height: 32),
+
+                              _buildRecentDeliveriesSection(),
+                            ],
+                          ),
+                        ),
                 ),
-              ),
-            const Text(
-              'Admin Dashboard',
-              style: TextStyle(fontSize: 16),
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'Desktop',
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: themeProvider.primaryColor,
-        foregroundColor: Colors.white,
-        actions: [
-          // Deliveries Dropdown
-          _buildHeaderDropdown(
-            label: 'Deliveries',
-            icon: Icons.local_shipping,
-            items: [
-              _DropdownMenuItem(
-                icon: Icons.add_box,
-                label: 'New Delivery',
-                onTap: () => Navigator.pushNamed(context, '/admin/deliveries/create'),
-              ),
-              _DropdownMenuItem(
-                icon: Icons.list_alt,
-                label: 'View Deliveries',
-                onTap: () => Navigator.pushNamed(context, '/admin/deliveries'),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          
-          // Management Dropdown
-          _buildHeaderDropdown(
-            label: 'Management',
-            icon: Icons.admin_panel_settings,
-            items: [
-              _DropdownMenuItem(
-                icon: Icons.people,
-                label: 'Drivers',
-                onTap: () => Navigator.pushNamed(context, '/admin/drivers'),
-              ),
-              _DropdownMenuItem(
-                icon: Icons.directions_car,
-                label: 'Vehicles',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const VehicleManagementDesktop(),
-                  ),
-                ),
-              ),
-              _DropdownMenuItem(
-                icon: Icons.person,
-                label: 'Users',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const UserManagementScreen(),
-                  ),
-                ),
-              ),
-              _DropdownMenuItem(
-                icon: Icons.inventory_2,
-                label: 'Items',
-                onTap: () => Navigator.pushNamed(context, '/admin/catalog'),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          
-          // Claims Dropdown
-          _buildHeaderDropdown(
-            label: 'Claims',
-            icon: Icons.report_problem,
-            items: [
-              _DropdownMenuItem(
-                icon: Icons.dashboard,
-                label: 'Claims Dashboard',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ClaimsDashboardScreen(),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          
-          // Import Dropdown
-          _buildHeaderDropdown(
-            label: 'Import',
-            icon: Icons.upload_file,
-            items: [
-              _DropdownMenuItem(
-                icon: Icons.person_add,
-                label: 'Create Customers',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const CustomerCreationScreen(),
-                  ),
-                ),
-              ),
-              _DropdownMenuItem(
-                icon: Icons.people_alt,
-                label: 'Import Customers',
-                onTap: () => Navigator.pushNamed(context, '/admin/customers/import'),
-              ),
-              _DropdownMenuItem(
-                icon: Icons.file_download,
-                label: 'Import from Abaserve',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AbaserveImportScreen(),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-          
-          // Documents Dropdown
-          _buildHeaderDropdown(
-            label: 'Documents',
-            icon: Icons.receipt_long,
-            items: [
-              _DropdownMenuItem(
-                icon: Icons.receipt,
-                label: 'View PODs',
-                onTap: () => Navigator.pushNamed(context, '/admin/pods'),
-              ),
-            ],
-          ),
-          const SizedBox(width: 16),
-          
-          // Chat
-          Tooltip(
-            message: 'Chat',
-            child: IconButton(
-              icon: const Icon(Icons.chat),
-              onPressed: () => Navigator.pushNamed(context, '/admin/chat'),
-              tooltip: 'Open Chat',
+              ],
             ),
           ),
-          
-          // Refresh
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDashboardData,
-            tooltip: 'Refresh',
-          ),
-          
-          // Logout
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () => _showLogoutDialog(),
-            tooltip: 'Logout',
-          ),
-          const SizedBox(width: 8),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Combined Company & Welcome Card (Full Width)
-                  _buildCombinedCompanyWelcomeCard(authProvider, themeProvider),
-                  
-                  const SizedBox(height: 24),
-                  
-                  // Stats Grid (4 columns)
-                  const Text(
-                    'Today\'s Overview',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildStatsGrid(),
-                  
-                  const SizedBox(height: 32),
-                  
-                  // Recent Deliveries (Full Width)
-                  _buildRecentDeliveriesSection(),
-                ],
+    );
+  }
+
+  /// Slim top bar above the work area: page title, date, quick actions.
+  Widget _buildTopBar(ThemeProvider themeProvider) {
+    final primaryColor = themeProvider.primaryColor;
+    return Container(
+      height: 72,
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Dashboard',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
-            ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: themeProvider.primaryColor,
+              Text(
+                DateFormat('EEEE, MMMM d, yyyy').format(DateTime.now()),
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Icon(
-                    Icons.analytics,
-                    size: 48,
-                    color: Colors.white.withValues(alpha: 0.9),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Analytics & Reports',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Insights and data visualization',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
+            ],
+          ),
+          const Spacer(),
+          // Primary call-to-action
+          FilledButton.icon(
+            onPressed: () => Navigator.pushNamed(context, '/admin/deliveries/create'),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('New Delivery'),
+            style: FilledButton.styleFrom(
+              backgroundColor: primaryColor,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
             ),
-            ListTile(
-              leading: const Icon(Icons.dashboard, color: Color(0xFF9C27B0)),
-              title: const Text('Analytics Dashboard'),
-              subtitle: const Text('View comprehensive analytics'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/admin/analytics');
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.map, color: Color(0xFF2196F3)),
-              title: const Text('Live Tracking'),
-              subtitle: const Text('View live delivery tracking'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/admin/live-tracking');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings, color: Color(0xFF607D8B)),
-              title: const Text('Settings'),
-              subtitle: const Text('Configure application settings'),
-              onTap: () async {
-                Navigator.pop(context);
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AdminSettingsScreen(),
-                  ),
-                );
-                // Refresh dashboard data when returning from settings
-                if ((result == true || result == null) && mounted) {
-                  _loadDashboardData();
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.help_outline, color: Color(0xFF4CAF50)),
-              title: const Text('Help & Support'),
-              subtitle: const Text('User guide and assistance'),
-              onTap: () {
-                Navigator.pop(context);
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Help & Support'),
-                    content: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.book, color: Color(0xFF2196F3)),
-                            title: const Text('User Guide'),
-                            subtitle: const Text('Complete PODSafe documentation'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showHelpDialog();
-                            },
-                          ),
-                          const Divider(),
-                          ListTile(
-                            leading: const Icon(Icons.lightbulb, color: Color(0xFFFF9800)),
-                            title: const Text('Quick Tips'),
-                            subtitle: const Text('Helpful usage tips'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showQuickTipsDialog();
-                            },
-                          ),
-                          const Divider(),
-                          ListTile(
-                            leading: const Icon(Icons.contact_support, color: Color(0xFF9C27B0)),
-                            title: const Text('Support'),
-                            subtitle: const Text('Contact information'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showSupportDialog();
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Close'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.close, color: Colors.grey),
-              title: const Text('Close'),
-              onTap: () => Navigator.pop(context),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.chat_outlined),
+            tooltip: 'Messages',
+            onPressed: () => Navigator.pushNamed(context, '/admin/chat'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+            onPressed: _loadDashboardData,
+          ),
+        ],
       ),
     );
   }
@@ -1043,81 +1074,48 @@ class _AdminDashboardDesktopState extends State<AdminDashboardDesktop> {
               ),
             ],
           ),
-          child: Stack(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Gradient background overlay (hidden by default)
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: LinearGradient(
-                      colors: [
-                        color.withValues(alpha: 0.04),
-                        Colors.transparent,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, color: color, size: 26),
+                  ),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.bold,
+                      color: color,
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey[900],
+                  letterSpacing: 0.2,
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: color.withValues(alpha: 0.2),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Icon(icon, color: color, size: 28),
-                    ),
-                    ShaderMask(
-                      shaderCallback: (bounds) {
-                        return LinearGradient(
-                          colors: [color, color.withValues(alpha: 0.6)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ).createShader(bounds);
-                      },
-                      child: Text(
-                        value,
-                        style: const TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[500],
+                  fontWeight: FontWeight.w500,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey[900],
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                ],
               ),
             ],
           ),
@@ -1428,6 +1426,20 @@ class _AdminDashboardDesktopState extends State<AdminDashboardDesktop> {
         ),
         actions: [
           TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _showQuickTipsDialog();
+            },
+            child: const Text('Quick Tips'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _showSupportDialog();
+            },
+            child: const Text('Contact Support'),
+          ),
+          TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Close'),
           ),
@@ -1605,17 +1617,4 @@ class _AdminDashboardDesktopState extends State<AdminDashboardDesktop> {
   }
 
   // Backup functionality moved to Settings screen
-}
-
-// Helper class for dropdown menu items
-class _DropdownMenuItem {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  _DropdownMenuItem({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
 }
