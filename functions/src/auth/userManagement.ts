@@ -10,6 +10,88 @@ import * as admin from 'firebase-admin';
 const db = admin.firestore();
 const auth = admin.auth();
 
+const USER_ROLES = ['admin', 'manager', 'logistics', 'accountant', 'filing_clerk', 'driver'];
+
+/**
+ * Create a user without changing the calling administrator's Firebase session.
+ * This is the callable used by the Flutter/RN admin-management screens.
+ */
+export const createUser = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to create users.');
+  }
+
+  const adminDoc = await db.collection('users').doc(context.auth.uid).get();
+  const adminData = adminDoc.data();
+  if (!adminDoc.exists || !adminData || adminData.role !== 'admin' || adminData.isActive !== true) {
+    throw new functions.https.HttpsError('permission-denied', 'Only active administrators can create users.');
+  }
+
+  const email = typeof data?.email === 'string' ? data.email.trim().toLowerCase() : '';
+  const fullName = typeof data?.fullName === 'string' ? data.fullName.trim() : typeof data?.name === 'string' ? data.name.trim() : '';
+  const password = typeof data?.password === 'string' ? data.password : '';
+  const role = data?.role;
+  const phoneNumber = typeof data?.phoneNumber === 'string' ? data.phoneNumber.trim() : '';
+  const isActive = typeof data?.isActive === 'boolean' ? data.isActive : true;
+
+  if (!email || !fullName || !password || !role) {
+    throw new functions.https.HttpsError('invalid-argument', 'Email, name, password, and role are required.');
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid email format.');
+  }
+  if (password.length < 6) {
+    throw new functions.https.HttpsError('invalid-argument', 'Password must be at least 6 characters.');
+  }
+  if (!USER_ROLES.includes(role)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid user role.');
+  }
+  if (data?.companyId && data.companyId !== adminData.companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Cannot create users for another company.');
+  }
+
+  try {
+    const existing = await auth.getUserByEmail(email).catch((error: { code?: string }) => {
+      if (error.code === 'auth/user-not-found') return null;
+      throw error;
+    });
+    if (existing) {
+      throw new functions.https.HttpsError('already-exists', 'A user with this email already exists.');
+    }
+
+    const userRecord = await auth.createUser({ email, password, displayName: fullName, disabled: !isActive });
+    try {
+      await db.collection('users').doc(userRecord.uid).set({
+        id: userRecord.uid,
+        email,
+        fullName,
+        displayName: fullName,
+        role,
+        companyId: adminData.companyId,
+        phoneNumber,
+        isActive,
+        emailVerified: false,
+        approvalStatus: role === 'driver' ? 'pending' : 'approved',
+        createdBy: context.auth.uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (error) {
+      await auth.deleteUser(userRecord.uid);
+      throw error;
+    }
+
+    return { success: true, uid: userRecord.uid, email, message: `Successfully created ${fullName}.` };
+  } catch (error: any) {
+    console.error('Error creating user:', error);
+    if (error instanceof functions.https.HttpsError) throw error;
+    if (error?.code === 'auth/email-already-exists') {
+      throw new functions.https.HttpsError('already-exists', 'A user with this email already exists.');
+    }
+    throw new functions.https.HttpsError('internal', 'Failed to create user.');
+  }
+});
+
 /**
  * Invite a new user to the platform
  * Only admins can invite users to their company

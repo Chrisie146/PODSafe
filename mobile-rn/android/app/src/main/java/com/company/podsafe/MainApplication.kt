@@ -1,4 +1,4 @@
-package com.podsafern
+package com.company.podsafe
 
 import android.app.Application
 import com.facebook.react.PackageList

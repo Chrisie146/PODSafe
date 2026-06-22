@@ -46,6 +46,7 @@ const firestore_1 = require("../../store/firestore");
 const tokenVault = new firestore_1.TokenVault();
 const tokenCache = new Map();
 async function getAccessToken(companyId) {
+    (0, config_1.validateConfig)();
     const cached = tokenCache.get(companyId);
     if (cached && cached.expiresAt > Date.now() + 60000) {
         return cached.token;

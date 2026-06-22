@@ -54,6 +54,7 @@ app.*.map.json
 # Android signing keys - NEVER COMMIT THESE
 android/app/release.keystore
 android/key.properties
+**/local.properties
 
 
 service-account-key.json

@@ -31,6 +31,9 @@ export const EnvironmentConfig = {
   enforceStrictSecurity: environment === 'production',
 
   environmentName: environment === 'production' ? 'PRODUCTION' : 'DEVELOPMENT',
-  firebaseProjectId: Config.FIREBASE_PROJECT_ID ?? 'podsafe-92a3e',
+  firebaseProjectId: Config.FIREBASE_PROJECT_ID ?? 'podsafe-f4a47',
   publicPodBaseUrl: Config.PUBLIC_POD_BASE_URL ?? 'http://localhost:5000',
+  useFirebaseEmulators: Config.USE_FIREBASE_EMULATORS === 'true',
+  firebaseEmulatorHost: Config.FIREBASE_EMULATOR_HOST || '10.0.2.2',
+  firebaseAuthEmulatorPort: Number(Config.FIREBASE_AUTH_EMULATOR_PORT) || 9099,
 };

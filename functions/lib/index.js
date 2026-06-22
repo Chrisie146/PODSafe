@@ -36,13 +36,15 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.bcHealth = exports.bcAutoPushPod = exports.bcScheduledPull = exports.bcPushPod = exports.bcPullShipments = exports.bcOAuthCallback = exports.bcOAuthRedirect = exports.createCompanyWithAdmin = void 0;
+exports.bcHealth = exports.bcAutoPushPod = exports.bcScheduledPull = exports.bcPushPod = exports.bcPullShipments = exports.bcTestConnection = exports.bcApiCall = exports.bcAuthenticate = exports.bcOAuthCallback = exports.bcOAuthRedirect = exports.createCompanyWithAdmin = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
-const config_1 = require("./config");
-(0, config_1.validateConfig)();
 const bcAuth = __importStar(require("./auth/bcAuth"));
+const bcCallables_1 = require("./auth/bcCallables");
+Object.defineProperty(exports, "bcApiCall", { enumerable: true, get: function () { return bcCallables_1.bcApiCall; } });
+Object.defineProperty(exports, "bcAuthenticate", { enumerable: true, get: function () { return bcCallables_1.bcAuthenticate; } });
+Object.defineProperty(exports, "bcTestConnection", { enumerable: true, get: function () { return bcCallables_1.bcTestConnection; } });
 const pull_1 = require("./integrations/businessCentral/pull");
 const push_1 = require("./integrations/businessCentral/push");
 const createCompanyWithAdmin_1 = require("./createCompanyWithAdmin");
@@ -66,12 +68,17 @@ exports.bcPullShipments = functions.https.onRequest(async (req, res) => {
             res.status(400).json({ error: 'Invalid request body' });
             return;
         }
+        await requireCompanyAdmin(req, req.body.companyId);
         console.log('Pull request:', req.body);
         const result = await (0, pull_1.pullShipments)(req.body);
         res.status(200).json(result);
     }
     catch (error) {
         console.error('Pull shipments error:', error);
+        if (error instanceof HttpRequestError) {
+            res.status(error.statusCode).json({ success: false, error: error.message });
+            return;
+        }
         res.status(500).json({
             success: false,
             error: error.message,
@@ -102,6 +109,7 @@ exports.bcPushPod = functions.https.onRequest(async (req, res) => {
             });
             return;
         }
+        await requireCompanyAdmin(req, req.body.companyId);
         console.log('Push POD request:', {
             companyId: req.body.companyId,
             sourceId: req.body.sourceId,
@@ -113,6 +121,10 @@ exports.bcPushPod = functions.https.onRequest(async (req, res) => {
     }
     catch (error) {
         console.error('Push POD error:', error);
+        if (error instanceof HttpRequestError) {
+            res.status(error.statusCode).json({ success: false, error: error.message });
+            return;
+        }
         res.status(500).json({
             success: false,
             error: error.message,
@@ -212,10 +224,34 @@ exports.bcAutoPushPod = functions.firestore
 async function verifyFirebaseToken(req) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        throw new Error('Missing or invalid authorization header');
+        throw new HttpRequestError(401, 'Missing or invalid authorization header');
     }
-    const token = authHeader.split('Bearer ')[1];
-    return admin.auth().verifyIdToken(token);
+    try {
+        return await admin.auth().verifyIdToken(authHeader.substring('Bearer '.length));
+    }
+    catch {
+        throw new HttpRequestError(401, 'Invalid or expired authentication token');
+    }
+}
+class HttpRequestError extends Error {
+    constructor(statusCode, message) {
+        super(message);
+        this.statusCode = statusCode;
+    }
+}
+async function requireCompanyAdmin(req, companyId) {
+    const token = await verifyFirebaseToken(req);
+    const userDoc = await admin.firestore().collection('users').doc(token.uid).get();
+    const user = userDoc.data();
+    if (!userDoc.exists || !user || user.isActive !== true) {
+        throw new HttpRequestError(403, 'Active user account required');
+    }
+    if (user.role !== 'admin') {
+        throw new HttpRequestError(403, 'Administrator access required');
+    }
+    if (user.companyId !== companyId) {
+        throw new HttpRequestError(403, 'Cannot access another company');
+    }
 }
 exports.bcHealth = functions.https.onRequest((_req, res) => {
     res.status(200).json({

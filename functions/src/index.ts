@@ -10,11 +10,9 @@ import * as admin from 'firebase-admin';
 admin.initializeApp();
 
 // Import configuration and validate
-import { validateConfig } from './config';
-validateConfig();
-
 // Import handlers
 import * as bcAuth from './auth/bcAuth';
+import { bcApiCall, bcAuthenticate, bcTestConnection } from './auth/bcCallables';
 import { pullShipments, validatePullRequest } from './integrations/businessCentral/pull';
 import { pushPod, validatePushPodRequest } from './integrations/businessCentral/push';
 import { createCompanyWithAdmin } from './createCompanyWithAdmin';
@@ -48,6 +46,8 @@ export const bcOAuthRedirect = bcAuth.redirect;
  * GET /bcOAuthCallback?code=xxx&state=yyy
  */
 export const bcOAuthCallback = bcAuth.callback;
+
+export { bcAuthenticate, bcApiCall, bcTestConnection };
 
 // ==================== DATA SYNC ENDPOINTS ====================
 
@@ -90,14 +90,13 @@ export const bcPullShipments = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    // TODO: Add authentication middleware
-    // const user = await verifyFirebaseToken(req);
-
     // Validate request
     if (!validatePullRequest(req.body)) {
       res.status(400).json({ error: 'Invalid request body' });
       return;
     }
+
+    await requireCompanyAdmin(req, req.body.companyId);
 
     console.log('Pull request:', req.body);
 
@@ -107,6 +106,10 @@ export const bcPullShipments = functions.https.onRequest(async (req, res) => {
     res.status(200).json(result);
   } catch (error) {
     console.error('Pull shipments error:', error);
+    if (error instanceof HttpRequestError) {
+      res.status(error.statusCode).json({ success: false, error: error.message });
+      return;
+    }
     res.status(500).json({
       success: false,
       error: (error as Error).message,
@@ -161,9 +164,6 @@ export const bcPushPod = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    // TODO: Add authentication middleware
-    // const user = await verifyFirebaseToken(req);
-
     // Validate request
     if (!validatePushPodRequest(req.body)) {
       res.status(400).json({
@@ -172,6 +172,8 @@ export const bcPushPod = functions.https.onRequest(async (req, res) => {
       });
       return;
     }
+
+    await requireCompanyAdmin(req, req.body.companyId);
 
     console.log('Push POD request:', {
       companyId: req.body.companyId,
@@ -186,6 +188,10 @@ export const bcPushPod = functions.https.onRequest(async (req, res) => {
     res.status(statusCode).json(result);
   } catch (error) {
     console.error('Push POD error:', error);
+    if (error instanceof HttpRequestError) {
+      res.status(error.statusCode).json({ success: false, error: error.message });
+      return;
+    }
     res.status(500).json({
       success: false,
       error: (error as Error).message,
@@ -325,16 +331,41 @@ export const bcAutoPushPod = functions.firestore
 /**
  * Verify Firebase ID token (for authenticated endpoints)
  */
-// @ts-ignore - Reserved for future use
 async function verifyFirebaseToken(req: functions.https.Request): Promise<admin.auth.DecodedIdToken> {
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    throw new Error('Missing or invalid authorization header');
+    throw new HttpRequestError(401, 'Missing or invalid authorization header');
   }
 
-  const token = authHeader.split('Bearer ')[1];
-  return admin.auth().verifyIdToken(token);
+  try {
+    return await admin.auth().verifyIdToken(authHeader.substring('Bearer '.length));
+  } catch {
+    throw new HttpRequestError(401, 'Invalid or expired authentication token');
+  }
+}
+
+class HttpRequestError extends Error {
+  constructor(public readonly statusCode: number, message: string) {
+    super(message);
+  }
+}
+
+/** Ensures an HTTP BC sync request is made by an active admin of the requested tenant. */
+async function requireCompanyAdmin(req: functions.https.Request, companyId: string): Promise<void> {
+  const token = await verifyFirebaseToken(req);
+  const userDoc = await admin.firestore().collection('users').doc(token.uid).get();
+  const user = userDoc.data();
+
+  if (!userDoc.exists || !user || user.isActive !== true) {
+    throw new HttpRequestError(403, 'Active user account required');
+  }
+  if (user.role !== 'admin') {
+    throw new HttpRequestError(403, 'Administrator access required');
+  }
+  if (user.companyId !== companyId) {
+    throw new HttpRequestError(403, 'Cannot access another company');
+  }
 }
 
 // ==================== HEALTH CHECK ====================

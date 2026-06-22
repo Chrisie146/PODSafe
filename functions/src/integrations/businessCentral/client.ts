@@ -5,7 +5,7 @@
 
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
 import * as admin from 'firebase-admin';
-import { config, getTokenEndpoint, getBcApiUrl } from '../../config';
+import { config, getTokenEndpoint, getBcApiUrl, validateConfig } from '../../config';
 import { getBcIntegration, TokenVault } from '../../store/firestore';
 import { TokenResponse, RetryableError } from '../../types';
 
@@ -23,6 +23,7 @@ const tokenCache = new Map<string, { token: string; expiresAt: number }>();
  * Otherwise refreshes using refresh token
  */
 export async function getAccessToken(companyId: string): Promise<string> {
+  validateConfig();
   // Check cache
   const cached = tokenCache.get(companyId);
   if (cached && cached.expiresAt > Date.now() + 60000) {

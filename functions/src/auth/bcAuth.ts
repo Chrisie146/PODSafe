@@ -6,7 +6,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
-import { config, getTokenEndpoint, getBcApiUrl } from '../config';
+import { config, getTokenEndpoint, getBcApiUrl, validateConfig } from '../config';
 import { saveBcIntegration, TokenVault } from '../store/firestore';
 import { OAuthState, TokenResponse, IdTokenClaims, BCCompany } from '../types';
 
@@ -55,6 +55,7 @@ function generateNonce(): string {
  */
 export const redirect = functions.https.onRequest(async (req, res) => {
   try {
+    validateConfig();
     console.log('=== bcOAuthRedirect called (v3) ===');
     console.log('Config values:', {
       clientId: config.bcClientId,
@@ -132,6 +133,7 @@ export const redirect = functions.https.onRequest(async (req, res) => {
  */
 export const callback = functions.https.onRequest(async (req, res) => {
   try {
+    validateConfig();
     // Handle both GET (query) and POST (form body) for callback
     const query = req.method === 'POST' ? req.body : req.query;
     const { code, state: stateParam, error, error_description } = query;

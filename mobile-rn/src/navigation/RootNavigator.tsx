@@ -3,9 +3,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '../stores/useAuthStore';
 import AuthStack from './AuthStack';
+import AdminStack from './AdminStack';
 import DriverStack from './DriverStack';
 import SplashScreen from '../screens/splash/SplashScreen';
-import HomePlaceholderScreen from '../screens/HomePlaceholderScreen';
 import PublicPodViewScreen from '../screens/public/PublicPodViewScreen';
 import ExternalUploadScreen from '../screens/external/ExternalUploadScreen';
 import { navigationRef } from './navigationRef';
@@ -17,7 +17,8 @@ import { linking } from './linking';
  * reachable regardless of auth state, matching the Flutter app's "skip auth bootstrap
  * for public links" behavior, but via linking.ts instead of a duplicated check.
  *
- * AdminStack (Phase 3/4) will replace HomePlaceholderScreen for non-driver roles once built.
+ * Driver and admin role stacks own their authenticated flows. Public links remain
+ * reachable regardless of authentication state.
  */
 export type RootStackParamList = {
   Auth: undefined;
@@ -52,7 +53,7 @@ export default function RootNavigator() {
     <NavigationContainer ref={navigationRef} linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {currentUser ? (
-          <Stack.Screen name="Home" component={currentUser.role === 'driver' ? DriverStack : HomePlaceholderScreen} />
+          <Stack.Screen name="Home" component={currentUser.role === 'driver' ? DriverStack : AdminStack} />
         ) : (
           <Stack.Screen name="Auth" component={AuthStack} />
         )}

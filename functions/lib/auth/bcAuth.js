@@ -63,6 +63,7 @@ function generateNonce() {
 }
 exports.redirect = functions.https.onRequest(async (req, res) => {
     try {
+        (0, config_1.validateConfig)();
         console.log('=== bcOAuthRedirect called (v3) ===');
         console.log('Config values:', {
             clientId: config_1.config.bcClientId,
@@ -120,6 +121,7 @@ exports.redirect = functions.https.onRequest(async (req, res) => {
 });
 exports.callback = functions.https.onRequest(async (req, res) => {
     try {
+        (0, config_1.validateConfig)();
         const query = req.method === 'POST' ? req.body : req.query;
         const { code, state: stateParam, error, error_description } = query;
         if (error) {

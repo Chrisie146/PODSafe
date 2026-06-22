@@ -8,7 +8,12 @@
 import 'react-native-get-random-values';
 
 import { AppRegistry } from 'react-native';
-import App from './App';
+import { configureFirebaseEmulators } from './src/config/firebaseEmulators';
 import { name as appName } from './app.json';
 
+// configureFirebaseEmulators() must run before anything touches the native Auth
+// module, so App is required (not statically imported) after the emulator call —
+// static imports are hoisted above this file's own top-level statements.
+configureFirebaseEmulators();
+const App = require('./App').default;
 AppRegistry.registerComponent(appName, () => App);

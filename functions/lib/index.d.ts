@@ -1,8 +1,10 @@
 import * as functions from 'firebase-functions';
+import { bcApiCall, bcAuthenticate, bcTestConnection } from './auth/bcCallables';
 import { createCompanyWithAdmin } from './createCompanyWithAdmin';
 export { createCompanyWithAdmin };
 export declare const bcOAuthRedirect: functions.HttpsFunction;
 export declare const bcOAuthCallback: functions.HttpsFunction;
+export { bcAuthenticate, bcApiCall, bcTestConnection };
 export declare const bcPullShipments: functions.HttpsFunction;
 export declare const bcPushPod: functions.HttpsFunction;
 export declare const bcScheduledPull: functions.CloudFunction<unknown>;

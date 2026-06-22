@@ -1,0 +1,69 @@
+{
+  "project_info": {
+    "project_number": "924036036167",
+    "firebase_url": "https://podsafe-f4a47-default-rtdb.firebaseio.com",
+    "project_id": "podsafe-f4a47",
+    "storage_bucket": "podsafe-f4a47.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:924036036167:android:fdfb4745af1f0ad8fba362",
+        "android_client_info": {
+          "package_name": "com.company.podsafe"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "924036036167-9ucqtui1b2piqle3jsfqnebp36toi5tp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwjA_fa9tH4CKFA1ffffLdubS9r1pyF-I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "924036036167-9ucqtui1b2piqle3jsfqnebp36toi5tp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:924036036167:android:41d722a868e46c7afba362",
+        "android_client_info": {
+          "package_name": "com.podsafern"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "924036036167-9ucqtui1b2piqle3jsfqnebp36toi5tp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwjA_fa9tH4CKFA1ffffLdubS9r1pyF-I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "924036036167-9ucqtui1b2piqle3jsfqnebp36toi5tp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
