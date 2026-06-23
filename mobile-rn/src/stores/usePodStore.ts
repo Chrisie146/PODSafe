@@ -6,6 +6,7 @@ import { PodRepository } from '../repositories/podRepository';
 import { PodTokenRepository, PodAccessToken } from '../repositories/podTokenRepository';
 import { OcrParser } from '../repositories/ocrParser';
 import { DeliveryRepository } from '../repositories/deliveryRepository';
+import { reverseGeocode } from '../repositories/locationRepository';
 
 /**
  * Replaces lib/providers/pod_provider.dart (POD viewer/listing, not yet ported — Phase 3)
@@ -129,7 +130,10 @@ export const usePodStore = create<PodState>((set, get) => ({
   submitPod: async (params) => {
     const { delivery, driverId, companyId, signatureDataUrl, receiverName, notes, photoUris, documents, stampPhotoUri } = params;
 
-    const location = await podRepository.getCurrentLocation();
+    const gpsLocation = await podRepository.getCurrentLocation();
+    const location = gpsLocation
+      ? { ...gpsLocation, address: await reverseGeocode(gpsLocation.latitude, gpsLocation.longitude) }
+      : undefined;
     const signatureUrl = await podRepository.uploadSignature(delivery.id, signatureDataUrl);
 
     const photoUrls: string[] = [];
