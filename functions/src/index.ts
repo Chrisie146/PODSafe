@@ -400,4 +400,8 @@ export * from './pdf/generatePodPdf';
 export * from './pdf/generateBulkPodZip';
 export * from './pdf/generateBulkClaimsPdf';
 
+// ==================== REVERSE GEOCODING ====================
+
+export * from './location/reverseGeocode';
+
 console.log('✅ All Cloud Functions loaded successfully');

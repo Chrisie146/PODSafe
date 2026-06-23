@@ -10,6 +10,9 @@
  * so capture must never fail because geocoding failed.
  */
 import axios from 'axios';
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import { config } from '../config';
 
 export interface GeocodeResult {
   results: Array<{ formatted_address: string }>;
@@ -41,3 +44,38 @@ export async function reverseGeocodeCoords(latitude: number, longitude: number, 
     return '';
   }
 }
+
+export interface ReverseGeocodeData {
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * onCall reverse geocoder. Authenticated + active users only (NOT admin-only —
+ * drivers capture PODs). No company gate: lat/lng carry no tenant data. Reads
+ * the Google Geocoding key from functions config and delegates to the pure
+ * helper, which returns '' on any failure so capture never breaks on geocoding.
+ */
+export const reverseGeocode = functions.https.onCall(async (data: ReverseGeocodeData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to reverse geocode.');
+  }
+
+  const { latitude, longitude } = data ?? {};
+  if (
+    typeof latitude !== 'number' || typeof longitude !== 'number' ||
+    !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+    latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+  ) {
+    throw new functions.https.HttpsError('invalid-argument', 'latitude and longitude must be finite numbers in valid ranges.');
+  }
+
+  const callerDoc = await admin.firestore().collection('users').doc(context.auth.uid).get();
+  const caller = callerDoc.data();
+  if (!callerDoc.exists || !caller || caller.isActive !== true) {
+    throw new functions.https.HttpsError('permission-denied', 'Active user account required.');
+  }
+
+  const address = await reverseGeocodeCoords(latitude, longitude, config.googleGeocodingKey);
+  return { address };
+});

@@ -22,7 +22,11 @@ export const config = {
   get bcScope() {
     return process.env.BC_SCOPE || functions.config().bc?.scope || 'https://api.businesscentral.dynamics.com/.default offline_access';
   },
-  
+  // Google Maps Geocoding API key (server-side, reverse geocoding at POD capture)
+  get googleGeocodingKey() {
+    return process.env.GOOGLE_GEOCODING_KEY || functions.config().google?.geocoding_key || '';
+  },
+
   // API Configuration
   bcApiBaseUrl: 'https://api.businesscentral.dynamics.com/v2.0',
   
