@@ -265,5 +265,6 @@ __exportStar(require("./auth/userManagement"), exports);
 __exportStar(require("./pdf/generatePodPdf"), exports);
 __exportStar(require("./pdf/generateBulkPodZip"), exports);
 __exportStar(require("./pdf/generateBulkClaimsPdf"), exports);
+__exportStar(require("./location/reverseGeocode"), exports);
 console.log('✅ All Cloud Functions loaded successfully');
 //# sourceMappingURL=index.js.map

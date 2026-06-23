@@ -54,6 +54,9 @@ exports.config = {
     get bcScope() {
         return process.env.BC_SCOPE || functions.config().bc?.scope || 'https://api.businesscentral.dynamics.com/.default offline_access';
     },
+    get googleGeocodingKey() {
+        return process.env.GOOGLE_GEOCODING_KEY || functions.config().google?.geocoding_key || '';
+    },
     bcApiBaseUrl: 'https://api.businesscentral.dynamics.com/v2.0',
     gcpProjectId: process.env.GCP_PROJECT_ID || process.env.GCLOUD_PROJECT || '',
     sessionSecret: process.env.SESSION_SECRET || 'change-me-in-production',

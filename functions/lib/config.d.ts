@@ -4,6 +4,7 @@ export declare const config: {
     readonly bcClientSecret: any;
     readonly bcRedirectUri: any;
     readonly bcScope: any;
+    readonly googleGeocodingKey: any;
     readonly bcApiBaseUrl: "https://api.businesscentral.dynamics.com/v2.0";
     readonly gcpProjectId: string;
     readonly sessionSecret: string;

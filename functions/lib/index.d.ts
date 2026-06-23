@@ -14,4 +14,5 @@ export * from './auth/userManagement';
 export * from './pdf/generatePodPdf';
 export * from './pdf/generateBulkPodZip';
 export * from './pdf/generateBulkClaimsPdf';
+export * from './location/reverseGeocode';
 //# sourceMappingURL=index.d.ts.map
