@@ -82,10 +82,21 @@ module.exports = {
       },
       {
         test: /\.(js|jsx|ts|tsx)$/,
+        // Force javascript/auto so webpack content-detects module type. Several
+        // RN packages (e.g. @react-navigation/*) ship a `{"type":"module"}` marker
+        // in their lib/module/ dir, which webpack reads as javascript/esm — but the
+        // @react-native/babel-preset force-compiles them to CommonJS (`exports`).
+        // Without this override the two disagree → "exports is not defined" at runtime.
+        type: 'javascript/auto',
         include: [path.resolve(__dirname, 'index.web.js'), path.resolve(__dirname, 'App.tsx'), path.resolve(__dirname, 'src'), ...compileNodeModules],
         use: {
           loader: 'babel-loader',
           options: {
+            // 'unambiguous' lets babel detect per-file whether a node_modules file
+            // is ESM or CJS and transform accordingly. Without it, ESM packages like
+            // @react-navigation compile to `exports.x=` while webpack still treats
+            // the module as ESM → "exports is not defined" at runtime.
+            sourceType: 'unambiguous',
             presets: ['module:@react-native/babel-preset'],
             plugins: ['react-native-web'],
           },
