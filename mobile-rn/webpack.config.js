@@ -28,6 +28,27 @@ const compileNodeModules = [
   '@react-navigation',
 ].map((m) => path.resolve(__dirname, 'node_modules', m));
 
+// Native-only RN libraries that have no web build — aliased to a noop stub so the
+// web bundle resolves. Real per-screen web fallbacks are M3 work.
+const NATIVE_ONLY_STUBS = [
+  '@react-native-ml-kit/text-recognition',
+  '@react-native-documents/picker',
+  'react-native-linear-gradient',
+  'expo-linear-gradient',
+  'react-native-maps',
+  'react-native-geolocation-service',
+  'react-native-permissions',
+  'react-native-image-picker',
+  'react-native-signature-canvas',
+  'react-native-share',
+  '@react-native-clipboard/clipboard',
+];
+const noopStub = path.resolve(__dirname, 'src/web-stubs/native-noop.js');
+const nativeOnlyStubAliases = NATIVE_ONLY_STUBS.reduce((acc, name) => {
+  acc[`${name}$`] = noopStub;
+  return acc;
+}, {});
+
 module.exports = {
   entry: path.resolve(__dirname, 'index.web.js'),
   output: {
@@ -39,6 +60,9 @@ module.exports = {
   resolve: {
     alias: {
       'react-native$': 'react-native-web',
+      // Native-only libraries with no web implementation → noop stub (M1/M2
+      // placeholder; real web fallbacks are M3). See src/web-stubs/native-noop.js.
+      ...nativeOnlyStubAliases,
       // Firebase shim aliases are added in Task 7.
     },
     extensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.js'],
