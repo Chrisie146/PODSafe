@@ -39,5 +39,12 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!-- Google Maps API key — reused from the Flutter app's android/app/src/main/AndroidManifest.xml
+           (same Google Cloud project). react-native-maps (task #12, live_tracking_screen) needs this
+           on Android; iOS uses Apple Maps by default so no key is required there. -->
+      <meta-data
+        android:name="com.google.android.geo.API_KEY"
+        android:value="AIzaSyChH7L0Ffmldc6AmiyPAm7D5BJDrG5SM8s"/>
     </application>
 </manifest>

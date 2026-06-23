@@ -138,6 +138,26 @@ export class DeliveryRepository {
     }
   }
 
+  /** Mirrors bulk_upload_screen.dart/abaserve_import_screen.dart's batched bulk-import write (500/batch, Firestore's limit). */
+  async createDeliveries(deliveries: Delivery[]): Promise<void> {
+    const batchSize = 500;
+    for (let i = 0; i < deliveries.length; i += batchSize) {
+      const chunk = deliveries.slice(i, i + batchSize);
+      const batch = this.firestoreInstance.batch();
+      for (const delivery of chunk) {
+        const docRef = this.firestoreInstance.collection('deliveries').doc();
+        batch.set(docRef, deliveryToFirestore(delivery));
+      }
+      await batch.commit();
+    }
+  }
+
+  /** Mirrors bulk_upload_screen.dart's `_loadExistingInvoices` duplicate-detection lookup. */
+  async getExistingInvoiceNumbers(companyId: string): Promise<string[]> {
+    const snapshot = await this.firestoreInstance.collection('deliveries').where('companyId', '==', companyId).get();
+    return snapshot.docs.map((doc) => doc.data().invoiceNumber as string | undefined).filter((value): value is string => Boolean(value));
+  }
+
   async updateDelivery(delivery: Delivery): Promise<void> {
     try {
       await this.firestoreInstance.collection('deliveries').doc(delivery.id).update(deliveryToFirestore(delivery));

@@ -33,10 +33,7 @@ import { textStyles } from '../../theme/textStyles';
  *   PinchGestureHandler is not wired — plain Image with resizeMode="contain" — since no
  *   gesture-handler viewer is installed yet; this is a acceptable a degraded-but-honest
  *   equivalent of the Dart source's InteractiveViewer pinch-to-zoom).
- * - "View POD" navigates to a `PodDetails` route that doesn't exist yet — pod_details_screen
- *   needs FirebaseStorageImage/LocationMapWidget/PodImageDownloadService/
- *   PodPdfGeneratorService, none ported yet, so this is a forward reference like
- *   DriverDetails.tsx's CreateDriver navigation.
+ * - "View POD" navigates to `PodDetails` (built later this phase, see PodDetails.tsx).
  */
 interface DeliveryDetailsProps {
   route: { params: { deliveryId: string } };

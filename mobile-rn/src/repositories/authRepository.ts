@@ -147,9 +147,8 @@ export class AuthRepository {
   }
 
   /**
-   * Calls the Phase 5 `createUser` Cloud Function — see class-level note. Will throw
-   * "not-found"/similar until that callable is deployed; this is the real intended
-   * integration code, not a placeholder.
+   * Calls the Phase 5 `createUser` Cloud Function — see class-level note. Now deployed
+   * and live (see vault "08 Backend Gap Fix Tracker").
    */
   async createUserViaCloudFunction(params: {
     email: string;
@@ -158,9 +157,20 @@ export class AuthRepository {
     companyId: string;
     role: UserRole;
     phoneNumber?: string;
-  }): Promise<void> {
+  }): Promise<{ uid: string; email: string }> {
     const callable = this.functionsInstance.httpsCallable('createUser');
-    await callable(params);
+    const response = await callable(params);
+    const data = response.data as { uid: string; email: string };
+    return { uid: data.uid, email: data.email };
+  }
+
+  /**
+   * Targeted Firestore patch for fields the `createUser` callable doesn't accept
+   * (e.g. licenseNumber/vehicleInfo) — mirrors create_driver_screen.dart's own
+   * second `.update()` call immediately after Cloud-Function user creation.
+   */
+  async patchUserFields(userId: string, fields: Record<string, unknown>): Promise<void> {
+    await this.firestoreInstance.collection('users').doc(userId).update(fields);
   }
 
   /**

@@ -27,10 +27,8 @@ import { textStyles } from '../../theme/textStyles';
  *   before — no admin list view had been built yet).
  * - The filter `PopupMenuButton` becomes a header icon opening an action-sheet Modal
  *   (house convention, same pattern as DeliveryManagement.tsx's export menu).
- * - Tapping a card navigates to a `PodDetails` route that doesn't exist yet —
- *   pod_details_screen.dart needs FirebaseStorageImage/LocationMapWidget/
- *   PodImageDownloadService/PodPdfGeneratorService, none ported yet — same
- *   forward-reference pattern as other not-yet-built destinations this phase.
+ * - Tapping a card navigates to `PodDetails` (built later this phase, see
+ *   PodDetails.tsx).
  */
 type DateFilter = 'all' | 'today' | 'week' | 'month';
 

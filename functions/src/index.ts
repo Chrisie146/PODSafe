@@ -390,4 +390,12 @@ export const bcHealth = functions.https.onRequest((_req, res) => {
  */
 export * from './auth/userManagement';
 
+// ==================== POD PDF REPORTS ====================
+
+/**
+ * Generate a branded PDF report for a POD (Proof of Delivery), upload it to
+ * Storage under pods/{deliveryId}/, and persist the download URL on the POD doc.
+ */
+export * from './pdf/generatePodPdf';
+
 console.log('✅ All Cloud Functions loaded successfully');

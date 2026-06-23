@@ -25,7 +25,15 @@ interface UserManagementState {
   updateUser: (user: AppUser) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
   sendPasswordResetEmail: (email: string) => Promise<void>;
-  createUser: (params: { email: string; password: string; fullName: string; companyId: string; role: UserRole; phoneNumber?: string }) => Promise<void>;
+  createUser: (params: {
+    email: string;
+    password: string;
+    fullName: string;
+    companyId: string;
+    role: UserRole;
+    phoneNumber?: string;
+  }) => Promise<{ uid: string; email: string }>;
+  patchUserFields: (userId: string, fields: Record<string, unknown>) => Promise<void>;
   clear: () => void;
 }
 
@@ -65,6 +73,8 @@ export const useUserManagementStore = create<UserManagementState>((set) => ({
   sendPasswordResetEmail: (email) => authRepository.sendPasswordResetEmail(email),
 
   createUser: (params) => authRepository.createUserViaCloudFunction(params),
+
+  patchUserFields: (userId, fields) => authRepository.patchUserFields(userId, fields),
 
   clear: () => {
     usersUnsubscribe?.();

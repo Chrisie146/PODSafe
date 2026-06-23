@@ -1,13 +1,18 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AbaserveImport from '../screens/admin/AbaserveImport';
 import AdminDashboard from '../screens/admin/AdminDashboard';
+import AdminSettings from '../screens/admin/AdminSettings';
 import AnalyticsDashboard from '../screens/admin/AnalyticsDashboard';
 import BcSettings from '../screens/admin/BcSettings';
 import BulkItemCreation from '../screens/admin/BulkItemCreation';
+import BulkUpload from '../screens/admin/BulkUpload';
 import ClaimDetails from '../screens/admin/ClaimDetails';
 import ClaimSettings from '../screens/admin/ClaimSettings';
 import ClaimsDashboard from '../screens/admin/ClaimsDashboard';
+import CreateDelivery from '../screens/admin/CreateDelivery';
+import CreateDriver from '../screens/admin/CreateDriver';
 import CustomerCreation from '../screens/admin/CustomerCreation';
 import CustomerImport from '../screens/admin/CustomerImport';
 import DataMigration from '../screens/admin/DataMigration';
@@ -15,6 +20,7 @@ import DeliveryDetails from '../screens/admin/DeliveryDetails';
 import DeliveryManagement from '../screens/admin/DeliveryManagement';
 import DriverDetails from '../screens/admin/DriverDetails';
 import DriverManagement from '../screens/admin/DriverManagement';
+import PodDetails from '../screens/admin/PodDetails';
 import PodViewer from '../screens/admin/PodViewer';
 import Reports from '../screens/admin/Reports';
 import UploadEvidenceForm from '../screens/admin/UploadEvidenceForm';
@@ -22,6 +28,7 @@ import UserManagement from '../screens/admin/UserManagement';
 import { colors, spacing } from '../theme/tokens';
 
 export type AdminStackParamList = {
+  AbaserveImport: undefined;
   AdminDashboard: undefined;
   AnalyticsDashboard: undefined;
   BcSettings: undefined;
@@ -68,6 +75,7 @@ export default function AdminStack() {
       <Stack.Screen name="AdminDashboard" options={{ headerShown: false }}>
         {({ navigation }) => <AdminDashboard navigation={navigation} />}
       </Stack.Screen>
+      <Stack.Screen name="AbaserveImport" component={AbaserveImport} options={{ title: 'Import from ABServe' }} />
       <Stack.Screen name="AnalyticsDashboard" component={AnalyticsDashboard} options={{ title: 'Analytics' }} />
       <Stack.Screen name="BcSettings" component={BcSettings} options={{ title: 'Business Central' }} />
       <Stack.Screen name="BulkItemCreation" component={BulkItemCreation} options={{ title: 'Bulk Item Creation' }} />
@@ -94,11 +102,17 @@ export default function AdminStack() {
       <Stack.Screen name="UploadEvidence" component={UploadEvidenceForm} options={{ title: 'Upload Evidence' }} />
       <Stack.Screen name="UserManagement" component={UserManagement} options={{ title: 'Users' }} />
 
-      <Stack.Screen name="AdminSettings" component={NotMigratedYet} options={{ title: 'Admin Settings' }} />
-      <Stack.Screen name="BulkUpload" component={NotMigratedYet} options={{ title: 'Bulk Upload' }} />
-      <Stack.Screen name="CreateDelivery" component={NotMigratedYet} options={{ title: 'Create Delivery' }} />
-      <Stack.Screen name="CreateDriver" component={NotMigratedYet} options={{ title: 'Create Driver' }} />
-      <Stack.Screen name="PodDetails" component={NotMigratedYet} options={{ title: 'POD Details' }} />
+      <Stack.Screen name="AdminSettings" options={{ title: 'Admin Settings' }}>
+        {({ navigation }) => <AdminSettings navigation={navigation} />}
+      </Stack.Screen>
+      <Stack.Screen name="BulkUpload" component={BulkUpload} options={{ title: 'Bulk Upload' }} />
+      <Stack.Screen name="CreateDelivery" options={{ title: 'Create Delivery' }}>
+        {({ navigation, route }) => <CreateDelivery navigation={navigation} route={route} />}
+      </Stack.Screen>
+      <Stack.Screen name="CreateDriver" component={CreateDriver} options={{ title: 'Add Driver' }} />
+      <Stack.Screen name="PodDetails" options={{ headerShown: false }}>
+        {({ navigation, route }) => <PodDetails navigation={navigation} route={route} />}
+      </Stack.Screen>
       <Stack.Screen name="VehicleManagement" component={NotMigratedYet} options={{ title: 'Vehicle Management' }} />
     </Stack.Navigator>
   );
