@@ -18,7 +18,7 @@
 - Functions build gate is `npm run build` (tsc, strict). The functions ESLint→TS wiring is pre-existing-broken; tsc is the real gate.
 - Functions test files MUST use the `*.spec.ts` extension (tsconfig excludes `**/*.spec.ts` from the build; vitest runs both `*.test.ts` and `*.spec.ts`, but `*.test.ts` would be compiled by tsc and break the build).
 - mobile-rn gates: `tsc --noEmit`, `eslint`, `jest` all clean.
-- Test the existing Google key (`AIzaSyChH7L0Ffmldc6AmiyPAm7D5BJDrG5SM8s`) from the callable first; if Google returns `REQUEST_DENIED` (Android-app-restricted key 403s from a server), the user creates a server-restricted Geocoding key, re-sets config, redeploys.
+- Test the existing Google key (the Android Maps SDK key currently in `AndroidManifest.xml` — literal redacted from this doc; supply it at deploy time) from the callable first; if Google returns `REQUEST_DENIED` (Android-app-restricted key 403s from a server), the user creates a server-restricted Geocoding key, re-sets config, redeploys. Rotate/restrict the key in GCP since the literal was previously committed.
 
 ## Spec refinement (call site)
 
@@ -468,13 +468,13 @@ git commit -m "feat(mobile-rn): populate pods.location.address via reverseGeocod
 
 **Files:** none (operational task — no code changes).
 
-> **External prerequisite:** This task sets the Google Geocoding key in functions config. Per the locked decision, start with the existing key `AIzaSyChH7L0Ffmldc6AmiyPAm7D5BJDrG5SM8s` and test it server-side. If Google returns `REQUEST_DENIED`, the user must create a server-restricted Geocoding key in GCP Console (restricted to the Geocoding API, optionally to Cloud Function egress IPs) and provide it for step 2.
+> **External prerequisite:** This task sets the Google Geocoding key in functions config. Per the locked decision, start with the existing Android Maps SDK key (literal redacted from this doc; supply it at deploy time) and test it server-side. If Google returns `REQUEST_DENIED`, the user must create a server-restricted Geocoding key in GCP Console (restricted to the Geocoding API, optionally to Cloud Function egress IPs) and provide it for step 2.
 
 - [ ] **Step 1: Set the Geocoding key in functions config**
 
 Run (from `functions/`):
 ```bash
-firebase functions:config:set google.geocoding_key="AIzaSyChH7L0Ffmldc6AmiyPAm7D5BJDrG5SM8s" --project podsafe-f4a47
+firebase functions:config:set google.geocoding_key="<EXISTING_ANDROID_MAPS_KEY>" --project podsafe-f4a47
 ```
 Expected: `✔ RTC Config updated.` (config is stored server-side, not committed.)
 

@@ -78,7 +78,7 @@ PodCapture screen
 ## Key handling + prerequisite
 
 - The key is read from Firebase functions config. The exact config path is chosen to match the existing `functions/` config convention (verified during planning — the BC integration already reads config/secrets). Set with `firebase functions:config:set` (or the project's existing secret mechanism) and never committed to the repo or shipped in the app.
-- **Test-existing-key-first (locked decision):** deploy with the existing `AIzaSyChH7L0Ffmldc6AmiyPAm7D5BJDrG5SM8s` key in config, then curl the callable with a real admin token. If Google returns `REQUEST_DENIED` (the key is Android-app-restricted and 403s from a server IP), the user creates a new Geocoding API key restricted to the Geocoding API (optionally to Cloud Function egress IPs) in GCP Console, re-sets config, and redeploys. This is the one external prerequisite and the only step requiring user GCP Console access.
+- **Test-existing-key-first (locked decision):** deploy with the existing Android Maps SDK key (literal redacted from this doc; it is the app-restricted Maps SDK key currently in `AndroidManifest.xml` — supply it at deploy time) in config, then curl the callable with a real admin token. If Google returns `REQUEST_DENIED` (the key is Android-app-restricted and 403s from a server IP), the user creates a new Geocoding API key restricted to the Geocoding API (optionally to Cloud Function egress IPs) in GCP Console, re-sets config, and redeploys. This is the one external prerequisite and the only step requiring user GCP Console access. The key literal was previously committed to these docs and to git history; rotate/restrict it in GCP.
 
 ## Security
 
