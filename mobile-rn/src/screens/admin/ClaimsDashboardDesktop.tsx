@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useClaimStore } from '../../stores/useClaimStore';
 import { DeliveryRepository } from '../../repositories/deliveryRepository';
 import { exportClaims } from '../../repositories/csvExportService';
+import { bulkExportService } from '../../repositories/bulkExportService';
 import {
   Claim,
   ClaimStatus,
@@ -73,12 +74,15 @@ const TABLE_WIDTH = Object.values(COLS).reduce((sum, c) => sum + c.width, 0);
  *   both come from the same `deliveries/{deliveryId}` document — same redundant-read pattern
  *   already fixed once in the mobile screen's `ClaimCard`. Fixed the same way here: one
  *   `deliveryRepository.getDeliveryById()` read per row.
- * - Bulk PDF export (`BulkClaimsPdfService.downloadClaimsAsZip`) is genuine client-side Dart
- *   PDF+zip generation, not a missing Cloud Function — but porting it is its own
- *   significant chunk of work (a second client-side PDF generator, the kind of thing this
- *   migration already chose to move server-side once for POD PDFs). Out of scope for this
- *   Phase 4 pass: the "Export as PDF" option shows a "not yet available" message instead of
- *   either silently dropping the menu item or building a new generator mid-screen-port.
+ * - Bulk PDF export (`BulkClaimsPdfService.downloadClaimsAsZip`) was genuine client-side Dart
+ *   PDF+zip generation. Per this migration's settled decision (move heavy PDF work server-side,
+ *   same as the single-POD `generatePodPdf` callable), it is now wired to the server-side
+ *   `generateBulkClaimsPdf` callable via `bulkExportService.exportClaimsAsPdfZip()` — selected
+ *   claims are exported, or all filtered claims if none selected. The callable builds one PDF
+ *   report per claim server-side, zips them, uploads to Storage, returns a download URL the
+ *   user can Open or Copy. The callable is built but not yet deployed (tracked in the vault's
+ *   Backend Gap Fix Tracker) — until deploy the call fails with a clear "may not be deployed"
+ *   message rather than a silent stub.
  * - Column-visibility toggles (`_showClaimId`/`_showType`/etc.) are dropped — a desktop
  *   power-user convenience over a table that already shows everything; not reachable from
  *   anywhere else, low value relative to the rest of this already-large screen.
@@ -116,6 +120,7 @@ export default function ClaimsDashboardDesktop({ navigation }: { navigation: { n
   const [dateStartText, setDateStartText] = useState('');
   const [dateEndText, setDateEndText] = useState('');
   const [showExportSheet, setShowExportSheet] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [quickNotesTarget, setQuickNotesTarget] = useState<{ claim?: Claim; bulkIds?: Set<string>; decision: 'approve' | 'reject' } | null>(null);
   const [deliveryLookup, setDeliveryLookup] = useState<Record<string, { orderNumber?: string; customerNumber?: string }>>({});
 
@@ -306,9 +311,38 @@ export default function ClaimsDashboardDesktop({ navigation }: { navigation: { n
     }
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     setShowExportSheet(false);
-    Alert.alert('Not Yet Available', 'Bulk PDF export is planned for a later phase (server-side PDF generation, tracked separately).');
+    // Selected claims take priority; otherwise export all currently-filtered claims.
+    const ids = selectedIds.size > 0 ? Array.from(selectedIds) : filteredClaims.map((c) => c.id);
+    if (ids.length === 0) {
+      Alert.alert('No Claims', 'There are no claims to export.');
+      return;
+    }
+    setIsExportingPdf(true);
+    try {
+      const result = await bulkExportService.exportClaimsAsPdfZip(ids);
+      const skippedNote = result.skipped ? `\n${result.skipped} skipped (not found in your company).` : '';
+      Alert.alert(
+        'Export Ready',
+        `${result.included} claim report(s) packaged as a ZIP.${skippedNote}\n\nOpen the download link in your browser?`,
+        [
+          { text: 'Copy Link', onPress: () => Clipboard.setString(result.downloadUrl) },
+          { text: 'Open', onPress: () => Linking.openURL(result.downloadUrl) },
+          { text: 'Close', style: 'cancel' },
+        ],
+      );
+    } catch (e) {
+      const msg = (e as Error).message ?? 'Unknown error';
+      Alert.alert(
+        'Export Failed',
+        msg.includes('not-found') || msg.includes('unauthenticated') || msg.includes('permission-denied')
+          ? `${msg}\n\nThe bulk export function may not be deployed yet — tracked separately.`
+          : `Error exporting claims: ${msg}`,
+      );
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const handleCopyId = (claim: Claim) => {
@@ -662,7 +696,7 @@ export default function ClaimsDashboardDesktop({ navigation }: { navigation: { n
         <Pressable style={styles.modalBackdrop} onPress={() => setShowExportSheet(false)}>
           <View style={[styles.actionSheet, shadows.card]}>
             <Text style={styles.actionSheetTitle}>Export Claims</Text>
-            <ActionRow icon="📄" label="Export as PDF Reports" color={colors.textPrimary} onPress={handleExportPdf} />
+            <ActionRow icon="📄" label={isExportingPdf ? 'Packaging PDFs…' : 'Export as PDF Reports'} color={colors.textPrimary} onPress={handleExportPdf} />
             <ActionRow icon="📊" label="Export as CSV" color={colors.textPrimary} onPress={handleExportCsv} />
           </View>
         </Pressable>

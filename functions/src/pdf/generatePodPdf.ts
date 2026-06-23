@@ -21,7 +21,7 @@ import { randomUUID } from 'crypto';
 
 const db = admin.firestore();
 
-function normalizeRegistration(registration: string): string {
+export function normalizeRegistration(registration: string): string {
   if (registration.trim().length === 0) return '';
   return registration.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
@@ -43,18 +43,45 @@ function formatDateTime(date: Date): string {
   });
 }
 
+/**
+ * Format a Firestore Timestamp, ISO-8601 string, epoch millis, or Date into a human
+ * timestamp. Returns 'N/A' for anything unrecognisable. Shared with the bulk callers.
+ */
+export function formatTimestamp(value: unknown): string {
+  if (!value) return 'N/A';
+  try {
+    if (value instanceof Date) return formatDateTime(value);
+    if (typeof value === 'number') return formatDateTime(new Date(value));
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+      return isNaN(parsed.getTime()) ? 'N/A' : formatDateTime(parsed);
+    }
+    if (typeof value === 'object' && value !== null) {
+      const v = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+      if (typeof v.toDate === 'function') return formatDateTime(v.toDate());
+      const secs = v.seconds ?? v._seconds;
+      if (typeof secs === 'number') return formatDateTime(new Date(secs * 1000));
+    }
+  } catch {
+    // fall through
+  }
+  return 'N/A';
+}
+
+export { fetchImageBytes };
+
 function formatGeneratedAt(date: Date): string {
   return date.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 interface InfoRow { label: string; value: string }
 
-function drawSectionHeader(doc: PDFKit.PDFDocument, title: string): void {
+export function drawSectionHeader(doc: PDFKit.PDFDocument, title: string): void {
   doc.font('Helvetica-Bold').fontSize(13).fillColor('#1565C0').text(title);
   doc.moveDown(0.3);
 }
 
-function drawInfoRows(doc: PDFKit.PDFDocument, rows: InfoRow[]): void {
+export function drawInfoRows(doc: PDFKit.PDFDocument, rows: InfoRow[]): void {
   const left = doc.x;
   const indented = left + 10;
   const labelWidth = 110;
@@ -68,7 +95,7 @@ function drawInfoRows(doc: PDFKit.PDFDocument, rows: InfoRow[]): void {
   doc.moveDown(0.5);
 }
 
-function drawImageCentered(doc: PDFKit.PDFDocument, bytes: Buffer, maxWidth: number, maxHeight: number): void {
+export function drawImageCentered(doc: PDFKit.PDFDocument, bytes: Buffer, maxWidth: number, maxHeight: number): void {
   try {
     doc.image(bytes, { fit: [maxWidth, maxHeight], align: 'center' });
   } catch (error) {
@@ -81,63 +108,37 @@ interface GeneratePodPdfData {
   deliveryId: string;
 }
 
-export const generatePodPdf = functions.https.onCall(async (data: GeneratePodPdfData, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to generate a POD PDF.');
-  }
-  const deliveryId = typeof data?.deliveryId === 'string' ? data.deliveryId.trim() : '';
-  if (!deliveryId) {
-    throw new functions.https.HttpsError('invalid-argument', 'deliveryId is required.');
-  }
+/**
+ * Inputs for the reusable POD PDF builder. All Firestore data + pre-fetched image
+ * bytes are supplied by the caller (the single-POD callable or the bulk-POD zip
+ * callable) so the builder is pure: no Firestore, no Storage, no auth — just layout.
+ */
+export interface PodPdfInput {
+  deliveryId: string;
+  pod: Record<string, any>;
+  delivery?: Record<string, any> | undefined;
+  driver?: Record<string, any> | undefined;
+  vehicle?: Record<string, any> | undefined;
+  company?: Record<string, any> | undefined;
+  photoBytesList: (Buffer | null)[];
+  documentBytesList: (Buffer | null)[];
+  documentMetadata: Array<{ type?: string }>;
+  signatureBytes: Buffer | null;
+  stampBytes: Buffer | null;
+  logoBytes: Buffer | null;
+}
 
-  const callerDoc = await db.collection('users').doc(context.auth.uid).get();
-  const caller = callerDoc.data();
-  if (!callerDoc.exists || !caller || caller.isActive !== true) {
-    throw new functions.https.HttpsError('permission-denied', 'Active user account required.');
-  }
-
-  const podDoc = await db.collection('pods').doc(deliveryId).get();
-  if (!podDoc.exists) {
-    throw new functions.https.HttpsError('not-found', 'POD record not found.');
-  }
-  const pod = podDoc.data()!;
-  if (pod.companyId !== caller.companyId) {
-    throw new functions.https.HttpsError('permission-denied', 'Cannot access a POD from another company.');
-  }
-
-  const deliveryDoc = await db.collection('deliveries').doc(deliveryId).get();
-  const delivery = deliveryDoc.data();
-
-  const [driverDoc, companyDoc] = await Promise.all([
-    delivery?.driverId ? db.collection('users').doc(delivery.driverId).get() : Promise.resolve(null),
-    db.collection('companies').doc(pod.companyId).get(),
-  ]);
-  const driver = driverDoc?.data();
-  const company = companyDoc.data();
-
-  let vehicle: Record<string, unknown> | undefined;
-  if (delivery?.vehicleUsed) {
-    const vehicleSnapshot = await db
-      .collection('companies').doc(pod.companyId).collection('vehicles')
-      .where('registration', '==', normalizeRegistration(delivery.vehicleUsed))
-      .limit(1)
-      .get();
-    vehicle = vehicleSnapshot.empty ? undefined : vehicleSnapshot.docs[0].data();
-  }
-
-  const photoUrls: string[] = Array.isArray(pod.photoUrls) && pod.photoUrls.length > 0
-    ? pod.photoUrls
-    : (pod.photoUrl ? [pod.photoUrl] : []);
-  const documentUrls: string[] = Array.isArray(pod.documentUrls) ? pod.documentUrls : [];
-  const documentMetadata: Array<{ type?: string }> = Array.isArray(pod.documentMetadata) ? pod.documentMetadata : [];
-
-  const [photoBytesList, documentBytesList, signatureBytes, stampBytes, logoBytes] = await Promise.all([
-    Promise.all(photoUrls.map(fetchImageBytes)),
-    Promise.all(documentUrls.map(fetchImageBytes)),
-    fetchImageBytes(pod.signatureUrl),
-    fetchImageBytes(pod.stampPhotoUrl),
-    fetchImageBytes(company?.logoUrl),
-  ]);
+/**
+ * Build a single POD report PDF buffer from already-fetched data. Shared by
+ * `generatePodPdf` (single, uploads to Storage) and `generateBulkPodZip` (many,
+ * zipped together). Same layout as the Dart `pod_pdf_generator_service.dart`.
+ */
+export async function buildPodPdfBuffer(input: PodPdfInput): Promise<Buffer> {
+  const {
+    deliveryId, pod, delivery, driver, vehicle, company,
+    photoBytesList, documentBytesList, documentMetadata,
+    signatureBytes, stampBytes, logoBytes,
+  } = input;
 
   const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
   const chunks: Buffer[] = [];
@@ -291,7 +292,72 @@ export const generatePodPdf = functions.https.onCall(async (data: GeneratePodPdf
   });
 
   doc.end();
-  const pdfBuffer = await donePromise;
+  return donePromise;
+}
+
+export const generatePodPdf = functions.https.onCall(async (data: GeneratePodPdfData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated to generate a POD PDF.');
+  }
+  const deliveryId = typeof data?.deliveryId === 'string' ? data.deliveryId.trim() : '';
+  if (!deliveryId) {
+    throw new functions.https.HttpsError('invalid-argument', 'deliveryId is required.');
+  }
+
+  const callerDoc = await db.collection('users').doc(context.auth.uid).get();
+  const caller = callerDoc.data();
+  if (!callerDoc.exists || !caller || caller.isActive !== true) {
+    throw new functions.https.HttpsError('permission-denied', 'Active user account required.');
+  }
+
+  const podDoc = await db.collection('pods').doc(deliveryId).get();
+  if (!podDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'POD record not found.');
+  }
+  const pod = podDoc.data()!;
+  if (pod.companyId !== caller.companyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Cannot access a POD from another company.');
+  }
+
+  const deliveryDoc = await db.collection('deliveries').doc(deliveryId).get();
+  const delivery = deliveryDoc.data();
+
+  const [driverDoc, companyDoc] = await Promise.all([
+    delivery?.driverId ? db.collection('users').doc(delivery.driverId).get() : Promise.resolve(null),
+    db.collection('companies').doc(pod.companyId).get(),
+  ]);
+  const driver = driverDoc?.data();
+  const company = companyDoc.data();
+
+  let vehicle: Record<string, unknown> | undefined;
+  if (delivery?.vehicleUsed) {
+    const vehicleSnapshot = await db
+      .collection('companies').doc(pod.companyId).collection('vehicles')
+      .where('registration', '==', normalizeRegistration(delivery.vehicleUsed))
+      .limit(1)
+      .get();
+    vehicle = vehicleSnapshot.empty ? undefined : vehicleSnapshot.docs[0].data();
+  }
+
+  const photoUrls: string[] = Array.isArray(pod.photoUrls) && pod.photoUrls.length > 0
+    ? pod.photoUrls
+    : (pod.photoUrl ? [pod.photoUrl] : []);
+  const documentUrls: string[] = Array.isArray(pod.documentUrls) ? pod.documentUrls : [];
+  const documentMetadata: Array<{ type?: string }> = Array.isArray(pod.documentMetadata) ? pod.documentMetadata : [];
+
+  const [photoBytesList, documentBytesList, signatureBytes, stampBytes, logoBytes] = await Promise.all([
+    Promise.all(photoUrls.map(fetchImageBytes)),
+    Promise.all(documentUrls.map(fetchImageBytes)),
+    fetchImageBytes(pod.signatureUrl),
+    fetchImageBytes(pod.stampPhotoUrl),
+    fetchImageBytes(company?.logoUrl),
+  ]);
+
+  const pdfBuffer = await buildPodPdfBuffer({
+    deliveryId, pod, delivery, driver, vehicle, company,
+    photoBytesList, documentBytesList, documentMetadata,
+    signatureBytes, stampBytes, logoBytes,
+  });
 
   const bucket = admin.storage().bucket();
   const filePath = `pods/${deliveryId}/report_${Date.now()}.pdf`;

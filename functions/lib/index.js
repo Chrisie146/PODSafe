@@ -263,5 +263,7 @@ exports.bcHealth = functions.https.onRequest((_req, res) => {
 });
 __exportStar(require("./auth/userManagement"), exports);
 __exportStar(require("./pdf/generatePodPdf"), exports);
+__exportStar(require("./pdf/generateBulkPodZip"), exports);
+__exportStar(require("./pdf/generateBulkClaimsPdf"), exports);
 console.log('✅ All Cloud Functions loaded successfully');
 //# sourceMappingURL=index.js.map

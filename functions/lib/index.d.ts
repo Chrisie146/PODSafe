@@ -12,4 +12,6 @@ export declare const bcAutoPushPod: functions.CloudFunction<functions.Change<fun
 export declare const bcHealth: functions.HttpsFunction;
 export * from './auth/userManagement';
 export * from './pdf/generatePodPdf';
+export * from './pdf/generateBulkPodZip';
+export * from './pdf/generateBulkClaimsPdf';
 //# sourceMappingURL=index.d.ts.map

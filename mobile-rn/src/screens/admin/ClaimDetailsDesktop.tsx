@@ -1,9 +1,11 @@
 // expects route.params: { claimId: string }
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useClaimStore } from '../../stores/useClaimStore';
 import { Claim, ClaimComment, claimStatusDisplayText, claimTypeDisplayText } from '../../models/claim';
+import { bulkExportService } from '../../repositories/bulkExportService';
 import { colors, spacing, radii, shadows } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
@@ -25,12 +27,17 @@ import { textStyles } from '../../theme/textStyles';
  * - **Close Claim** — real, via the same `updateClaimStatus({newStatus: 'closed', ...})`
  *   the approve/reject flow already uses.
  *
+ * Wired (this pass):
+ * - **Export to PDF** — the Dart source's `_showExportDialog()` was ~390 lines of
+ *   client-side single-claim PDF layout (`package:pdf/widgets.dart`). Per this migration's
+ *   settled decision (move heavy PDF work server-side, same as `generatePodPdf`), it now
+ *   reuses the server-side `generateBulkClaimsPdf` callable with a single-element id list
+ *   via `bulkExportService.exportClaimsAsPdfZip([claimId])` — same report layout, packaged
+ *   as a one-element ZIP, returns a download URL the user can Open or Copy. The callable is
+ *   built but not yet deployed (tracked in the vault's Backend Gap Fix Tracker) — until
+ *   deploy the call fails with a clear "may not be deployed" message.
+ *
  * Scoped out (not ported):
- * - **Export to PDF** — the Dart source's `_showExportDialog()` is ~390 lines of
- *   client-side single-claim PDF layout (`package:pdf/widgets.dart`), the same kind of
- *   client-side generator this migration already chose to move server-side once for PODs
- *   (`generatePodPdf`). Shows a "not yet available" message instead of porting a third
- *   client-side PDF generator across this Phase 4 pass (see Risk Register #16).
  * - **Request Additional Information** — the Dart source's `_showRequestInfoDialog()`
  *   shows a SnackBar claiming "Information request sent" but never actually sends, stores,
  *   or notifies anything (confirmed by direct read — no write call exists). That's a fake
@@ -92,6 +99,7 @@ export default function ClaimDetailsDesktop({ route, navigation }: ClaimDetailsD
   const [leftSection, setLeftSection] = useState<LeftSection>('details');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [commentText, setCommentText] = useState('');
 
   const [showEditAmount, setShowEditAmount] = useState(false);
@@ -251,9 +259,33 @@ export default function ClaimDetailsDesktop({ route, navigation }: ClaimDetailsD
     }
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     setShowMenu(false);
-    Alert.alert('Not Yet Available', 'Single-claim PDF export is planned for a later phase (server-side generation, tracked separately).');
+    setIsExportingPdf(true);
+    try {
+      // Single-claim PDF reuses the bulk-claims callable with one id — same server-side
+      // report layout, just a one-element ZIP. Avoids a third client-side PDF generator.
+      const result = await bulkExportService.exportClaimsAsPdfZip([claimId]);
+      Alert.alert(
+        'Export Ready',
+        'Claim report packaged as a ZIP.\n\nOpen the download link in your browser?',
+        [
+          { text: 'Copy Link', onPress: () => Clipboard.setString(result.downloadUrl) },
+          { text: 'Open', onPress: () => Linking.openURL(result.downloadUrl) },
+          { text: 'Close', style: 'cancel' },
+        ],
+      );
+    } catch (e) {
+      const msg = (e as Error).message ?? 'Unknown error';
+      Alert.alert(
+        'Export Failed',
+        msg.includes('not-found') || msg.includes('unauthenticated') || msg.includes('permission-denied')
+          ? `${msg}\n\nThe export function may not be deployed yet — tracked separately.`
+          : `Error exporting claim: ${msg}`,
+      );
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const submitRequestInfo = () => {
@@ -336,7 +368,7 @@ export default function ClaimDetailsDesktop({ route, navigation }: ClaimDetailsD
         <Pressable style={styles.modalBackdrop} onPress={() => setShowMenu(false)}>
           <View style={[styles.actionSheet, shadows.card]}>
             <ActionRow label="Download All Evidence" icon="⬇" onPress={handleDownloadAllEvidence} />
-            <ActionRow label="Export to PDF" icon="📄" onPress={handleExportPdf} />
+            <ActionRow label={isExportingPdf ? 'Exporting…' : 'Export to PDF'} icon="📄" onPress={handleExportPdf} />
             <ActionRow label="Close Claim" icon="🔒" color={colors.error} onPress={() => { setShowMenu(false); submitClose(); }} />
           </View>
         </Pressable>

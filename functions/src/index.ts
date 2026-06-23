@@ -397,5 +397,7 @@ export * from './auth/userManagement';
  * Storage under pods/{deliveryId}/, and persist the download URL on the POD doc.
  */
 export * from './pdf/generatePodPdf';
+export * from './pdf/generateBulkPodZip';
+export * from './pdf/generateBulkClaimsPdf';
 
 console.log('✅ All Cloud Functions loaded successfully');

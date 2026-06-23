@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { PodRepository } from '../../repositories/podRepository';
 import { PodRecord } from '../../models/pod';
 import { exportPODs } from '../../repositories/csvExportService';
+import { bulkExportService } from '../../repositories/bulkExportService';
 import FirebaseStorageImage from '../../components/FirebaseStorageImage';
 import LocationMapWidget from '../../components/LocationMapWidget';
 import { colors, spacing, radii, shadows } from '../../theme/tokens';
@@ -53,11 +55,16 @@ function periodSinceDate(period: TimePeriod): Date | undefined {
  * the existing Flutter app (which still has the correct legacy-shape context), not this
  * port.
  *
- * Bulk download as PDF-reports-ZIP / images-ZIP (`BulkPODDownloadService`) is confirmed
- * genuine client-side Dart PDF+zip generation, not a missing Cloud Function — same
- * situation as `ClaimsDashboardDesktop.tsx`'s bulk claims PDF export (see Risk Register
- * #16). Scoped out of this pass for the same reason; CSV export (via the already-built
- * `exportPODs()`) is wired for real.
+ * Bulk download as PDF-reports-ZIP / images-ZIP (`BulkPODDownloadService`) was genuine
+ * client-side Dart PDF+zip generation. Per this migration's settled decision (move heavy
+ * PDF/image work server-side, same as the single-POD `generatePodPdf` callable), both are
+ * now wired to the server-side `generateBulkPodZip` callable via
+ * `bulkExportService.exportPodsAsZip(podIds, mode)` — `mode: 'pdf'` for the PDF-reports ZIP,
+ * `mode: 'images'` for the raw photos/signature/stamp ZIP. Selected PODs are exported, or
+ * all filtered PODs if none selected. The callable is built but not yet deployed (tracked
+ * in the vault's Backend Gap Fix Tracker) — until deploy the call fails with a clear "may
+ * not be deployed" message. CSV export (via the already-built `exportPODs()`) stays wired
+ * for real.
  *
  * `_showFullPODDialog()` (an in-page modal largely duplicating PodDetails.tsx) becomes a
  * navigation to the already-ported `PodDetails` screen instead, avoiding a redundant
@@ -207,10 +214,39 @@ export default function PodViewerDesktop({ navigation }: { navigation: { navigat
     }
   };
 
-  const handleExportZipStub = () => {
+  const exportPodsZip = async (mode: 'pdf' | 'images') => {
     setShowExportSheet(false);
-    Alert.alert('Not Yet Available', 'Bulk PDF/image ZIP downloads are planned for a later phase (server-side generation, tracked separately).');
+    const pods = isMultiSelectMode && selectedIds.size > 0 ? (filteredPods ?? []).filter((p) => selectedIds.has(p.id)) : filteredPods ?? [];
+    if (pods.length === 0) {
+      Alert.alert('No PODs', 'There are no PODs to export.');
+      return;
+    }
+    const podIds = pods.map((p) => p.id);
+    try {
+      const result = await bulkExportService.exportPodsAsZip(podIds, mode);
+      const skippedNote = result.skipped ? `\n${result.skipped} skipped (not found in your company).` : '';
+      Alert.alert(
+        'Export Ready',
+        `${result.included} POD(s) packaged as a ZIP.${skippedNote}\n\nOpen the download link in your browser?`,
+        [
+          { text: 'Copy Link', onPress: () => Clipboard.setString(result.downloadUrl) },
+          { text: 'Open', onPress: () => Linking.openURL(result.downloadUrl) },
+          { text: 'Close', style: 'cancel' },
+        ],
+      );
+    } catch (e) {
+      const msg = (e as Error).message ?? 'Unknown error';
+      Alert.alert(
+        'Export Failed',
+        msg.includes('not-found') || msg.includes('unauthenticated') || msg.includes('permission-denied')
+          ? `${msg}\n\nThe bulk export function may not be deployed yet — tracked separately.`
+          : `Error exporting PODs: ${msg}`,
+      );
+    }
   };
+
+  const handleExportPdfZip = () => exportPodsZip('pdf');
+  const handleExportImagesZip = () => exportPodsZip('images');
 
   return (
     <View style={styles.container}>
@@ -392,8 +428,8 @@ export default function PodViewerDesktop({ navigation }: { navigation: { navigat
           <View style={[styles.actionSheet, shadows.card]}>
             <Text style={styles.actionSheetTitle}>Export PODs</Text>
             <ActionRow icon="📊" label="Export as CSV" onPress={handleExportCsv} />
-            <ActionRow icon="📄" label="Download as PDF Reports (ZIP)" onPress={handleExportZipStub} />
-            <ActionRow icon="🖼" label="Download Images (ZIP)" onPress={handleExportZipStub} />
+            <ActionRow icon="📄" label="Download as PDF Reports (ZIP)" onPress={handleExportPdfZip} />
+            <ActionRow icon="🖼" label="Download Images (ZIP)" onPress={handleExportImagesZip} />
           </View>
         </Pressable>
       </Modal>
