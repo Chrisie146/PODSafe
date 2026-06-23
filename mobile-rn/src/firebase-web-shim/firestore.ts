@@ -33,6 +33,7 @@ import {
   type QuerySnapshot,
   type WhereFilterOp,
   type OrderByDirection,
+  type FieldPath as FbFieldPath,
 } from 'firebase/firestore';
 import { getWebFirebaseApp } from '../config/firebase.web';
 
@@ -46,7 +47,7 @@ class DocRef {
     return this._ref.id;
   }
   get(): Promise<DocumentSnapshot> {
-    return getDoc(this._ref);
+    return getDoc(this._ref).then(wrapDocSnapshot);
   }
   set(data: Record<string, unknown>, options?: { merge?: boolean }): Promise<void> {
     return options ? setDoc(this._ref, data, options) : setDoc(this._ref, data);
@@ -61,8 +62,42 @@ class DocRef {
     return new CollectionRef(fbCollection(this._ref, path));
   }
   onSnapshot(onNext: DocCb, onError?: ErrCb): () => void {
-    return fbOnSnapshot(this._ref, onNext, onError);
+    return fbOnSnapshot(this._ref, (s) => onNext(wrapDocSnapshot(s)), onError);
   }
+}
+
+// Wrap a modular DocumentSnapshot so its `.ref` is a shim DocRef (which HAS
+// .update()/.set()/.delete()/.collection()/.onSnapshot()/.id), while every
+// other member (.exists(), .data(), .id, .metadata, ...) passes through to
+// the underlying modular snapshot. Methods are bound to the original target
+// so internal `this` references inside the SDK's snapshot implementation
+// stay correct.
+//
+// This matters because firebase/firestore v9+ DocumentReference has NO
+// instance .update()/.set()/.delete() (those are free functions only).
+// Consumers across the app call `doc.ref.update(...)` and
+// `batch.update(doc.ref, ...)` on refs obtained from snapshots
+// (chatRepository.ts, deliveryRepository.ts, podTokenRepository.ts,
+// DataMigration.tsx), so snapshots must be wrapped before being handed back.
+function wrapDocSnapshot<T extends object>(snap: T): T {
+  return new Proxy(snap, {
+    get(target, prop) {
+      if (prop === 'ref') return new DocRef((target as any).ref);
+      const v = Reflect.get(target, prop, target);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  }) as T;
+}
+
+function wrapQuerySnapshot<T extends { docs: any[]; forEach: (cb: (d: any) => void) => void }>(qs: T): T {
+  return new Proxy(qs, {
+    get(target, prop) {
+      if (prop === 'docs') return target.docs.map(wrapDocSnapshot);
+      if (prop === 'forEach') return (cb: (d: any) => void) => target.forEach((d) => cb(wrapDocSnapshot(d)));
+      const v = Reflect.get(target, prop, target);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  }) as T;
 }
 
 class Query {
@@ -70,8 +105,8 @@ class Query {
   protected _add(c: QueryConstraint): Query {
     return new Query(this._ref, [...this._constraints, c]);
   }
-  where(field: string | object, op: WhereFilterOp, value: unknown): Query {
-    return this._add(fbWhere(field as string, op, value));
+  where(field: string | FbFieldPath, op: WhereFilterOp, value: unknown): Query {
+    return this._add(fbWhere(field, op, value));
   }
   orderBy(field: string | object, direction?: OrderByDirection): Query {
     return this._add(fbOrderBy(field as string, direction));
@@ -86,10 +121,10 @@ class Query {
     return this._constraints.length ? fbQuery(this._ref, ...this._constraints) : (this._ref as FbQuery);
   }
   get(): Promise<QuerySnapshot> {
-    return getDocs(this._compiled());
+    return getDocs(this._compiled()).then(wrapQuerySnapshot);
   }
   onSnapshot(onNext: QueryCb, onError?: ErrCb): () => void {
-    return fbOnSnapshot(this._compiled(), onNext, onError);
+    return fbOnSnapshot(this._compiled(), (s) => onNext(wrapQuerySnapshot(s)), onError);
   }
 }
 
@@ -160,7 +195,7 @@ function makeBatch(db: Firestore): WriteBatchShim {
 function runTransactionShim<T>(db: Firestore, fn: (tx: TransactionShim) => Promise<T>): Promise<T> {
   return fbRunTransaction(db, (tx) => {
     const shim: TransactionShim = {
-      get: (ref) => tx.get(ref._ref),
+      get: (ref) => tx.get(ref._ref).then(wrapDocSnapshot),
       set: (ref, data, options) => {
         options ? tx.set(ref._ref, data, options) : tx.set(ref._ref, data);
         return shim;

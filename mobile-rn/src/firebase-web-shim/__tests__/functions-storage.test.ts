@@ -50,4 +50,22 @@ describe('storage shim', () => {
   it('putFile throws WebUnsupportedError', () => {
     expect(() => storage().ref('a/b.png').putFile('/local/path')).toThrow(WebUnsupportedError);
   });
+  it('refFromURL builds a ref and getDownloadURL works on it', async () => {
+    const url = 'gs://bucket/a/b.png';
+    const ref = storage().refFromURL(url);
+    expect(fbStorage.ref).toHaveBeenCalledWith(expect.objectContaining({ __storage: true }), url);
+    const downloadUrl = await ref.getDownloadURL();
+    expect(downloadUrl).toBe('https://dl/x');
+    expect(fbStorage.getDownloadURL).toHaveBeenCalledWith(expect.objectContaining({ __ref: url }));
+  });
+  it('putString forwards the format argument to uploadString', async () => {
+    const metadata = { contentType: 'image/png' };
+    await storage().ref('a/b.png').putString('base64data', 'base64', metadata);
+    expect(fbStorage.uploadString).toHaveBeenCalledWith(
+      expect.objectContaining({ __ref: 'a/b.png' }),
+      'base64data',
+      'base64',
+      metadata,
+    );
+  });
 });
