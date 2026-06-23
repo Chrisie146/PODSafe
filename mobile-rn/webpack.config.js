@@ -63,7 +63,12 @@ module.exports = {
       // Native-only libraries with no web implementation → noop stub (M1/M2
       // placeholder; real web fallbacks are M3). See src/web-stubs/native-noop.js.
       ...nativeOnlyStubAliases,
-      // Firebase shim aliases are added in Task 7.
+      // @react-native-firebase/* (native-only) → web shim over the firebase JS SDK.
+      '@react-native-firebase/app': path.resolve(__dirname, 'src/firebase-web-shim/app.ts'),
+      '@react-native-firebase/auth': path.resolve(__dirname, 'src/firebase-web-shim/auth.ts'),
+      '@react-native-firebase/firestore': path.resolve(__dirname, 'src/firebase-web-shim/firestore.ts'),
+      '@react-native-firebase/functions': path.resolve(__dirname, 'src/firebase-web-shim/functions.ts'),
+      '@react-native-firebase/storage': path.resolve(__dirname, 'src/firebase-web-shim/storage.ts'),
     },
     extensions: ['.web.tsx', '.web.ts', '.web.js', '.tsx', '.ts', '.js'],
   },
