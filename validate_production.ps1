@@ -169,10 +169,9 @@ foreach ($file in $criticalFiles) {
 Write-Host "8. Checking Documentation..." -ForegroundColor Yellow
 
 $docs = @(
-    "PRODUCTION_READINESS_CHECKLIST.md",
     "PRODUCTION_DEPLOYMENT_GUIDE.md",
-    "PRODUCTION_MONITORING_INCIDENT_RESPONSE.md",
-    "PRODUCTION_FIREBASE_SETUP.md"
+    "README.md",
+    "SECURITY_MANUAL_TEST_GUIDE.md"
 )
 
 foreach ($doc in $docs) {

@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - ✓ Accessibility (2 tests)
 /// - ✓ Animations (1 test)
 ///
-/// See PHASE_2_WIDGET_TESTING.md for detailed test specifications.
+/// Keep detailed test specifications alongside the active test suite.
 
 void main() {
   group('LoginScreen Widget Tests (Deferred)', () {

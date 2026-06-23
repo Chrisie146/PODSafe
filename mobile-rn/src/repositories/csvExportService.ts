@@ -1,6 +1,8 @@
 import Papa from 'papaparse';
 import CryptoJS from 'crypto-js';
 import Share from 'react-native-share';
+import { Vehicle } from '../models/vehicle';
+import { CatalogItem, itemCategoryDisplayName } from '../models/catalogItem';
 
 /**
  * Ported from lib/services/csv_export_service.dart + csv_export_mobile.dart (verified
@@ -233,4 +235,61 @@ export async function exportAnalyticsSummary(summary: Record<string, unknown>, s
   ];
 
   await exportToCSV(generateFilename('analytics_summary'), headers, rows);
+}
+
+// ============================================================================
+// VEHICLE EXPORT
+// ============================================================================
+
+/**
+ * New — no Dart CSVExportService.exportVehicles() ever existed; vehicle_management_desktop.dart
+ * built a CSV via a StringBuffer in `_exportToCsv()` that was never written to disk or shared
+ * anywhere (dead code — confirmed by direct read, see vault Risk Register). This follows the
+ * same per-entity export convention as exportDrivers/exportDeliveries/exportClaims/exportPODs
+ * instead of repeating that bug. Takes `Vehicle[]` directly (rather than the other exporters'
+ * `Record<string, unknown>[]`) since a typed model already exists here — no need for the loose
+ * shape those functions use.
+ */
+export async function exportVehicles(vehicles: Vehicle[]): Promise<void> {
+  const headers = ['Registration', 'Make', 'Model', 'Plate', 'Status', 'Deliveries', 'Last Used', 'Created'];
+
+  const rows = vehicles.map((vehicle) => [
+    cleanText(vehicle.registration ?? 'N/A'),
+    cleanText(vehicle.make ?? ''),
+    cleanText(vehicle.model ?? ''),
+    cleanText(vehicle.licensePlate ?? ''),
+    formatStatus(vehicle.status ?? 'active'),
+    String(vehicle.totalDeliveries ?? 0),
+    formatDateTime(vehicle.lastUsedAt),
+    formatDateTime(vehicle.createdAt),
+  ]);
+
+  await exportToCSV(generateFilename('vehicles_export'), headers, rows);
+}
+
+// ============================================================================
+// CATALOG ITEM EXPORT
+// ============================================================================
+
+/**
+ * New — no Dart CSVExportService.exportCatalogItems() ever existed; item_catalog_desktop.dart's
+ * `_exportToCsv()` builds a CSV StringBuffer and then only shows a `SnackBar` ("CSV ready: N
+ * items") — the buffer is never written to disk or shared anywhere (dead code, same pattern as
+ * vehicle_management_desktop's bug — see vault Risk Register). Wired for real here.
+ */
+export async function exportCatalogItems(items: CatalogItem[]): Promise<void> {
+  const headers = ['Description', 'SKU', 'Category', 'Unit', 'Default Qty', 'Price', 'Usage Count', 'Created'];
+
+  const rows = items.map((item) => [
+    cleanText(item.description ?? 'N/A'),
+    cleanText(item.sku ?? ''),
+    cleanText(itemCategoryDisplayName(item.category)),
+    cleanText(item.unit ?? ''),
+    item.defaultQuantity != null ? String(item.defaultQuantity) : '',
+    item.unitPrice != null ? item.unitPrice.toFixed(2) : '',
+    String(item.usageCount ?? 0),
+    formatDateTime(item.createdAt),
+  ]);
+
+  await exportToCSV(generateFilename('catalog_items_export'), headers, rows);
 }

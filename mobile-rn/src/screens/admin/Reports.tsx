@@ -33,7 +33,7 @@ import { textStyles } from '../../theme/textStyles';
  *   date-range-picker library installed).
  * - Report-type selector `FilterChip`s become the existing Chip pattern used elsewhere.
  */
-type ReportType = 'delivery' | 'driver' | 'claims' | 'customers' | 'pod';
+export type ReportType = 'delivery' | 'driver' | 'claims' | 'customers' | 'pod';
 
 const REPORT_TABS: { key: ReportType; label: string }[] = [
   { key: 'delivery', label: 'Deliveries' },
@@ -450,7 +450,7 @@ async function loadPodReport(companyId: string, startDate: Date, endDate: Date) 
   };
 }
 
-const LOADERS: Record<ReportType, (companyId: string, start: Date, end: Date) => Promise<{ data: Record<string, unknown>[]; summary: Record<string, unknown> }>> = {
+export const LOADERS: Record<ReportType, (companyId: string, start: Date, end: Date) => Promise<{ data: Record<string, unknown>[]; summary: Record<string, unknown> }>> = {
   delivery: loadDeliveryReport,
   driver: loadDriverReport,
   claims: loadClaimsReport,
@@ -458,7 +458,7 @@ const LOADERS: Record<ReportType, (companyId: string, start: Date, end: Date) =>
   pod: loadPodReport,
 };
 
-const SUMMARY_CARDS: Record<ReportType, SummaryCardDef[]> = {
+export const SUMMARY_CARDS: Record<ReportType, SummaryCardDef[]> = {
   delivery: [
     { label: 'Total', key: 'total', color: colors.info },
     { label: 'Completed', key: 'completed', color: colors.success },
@@ -507,7 +507,7 @@ const SUMMARY_CARDS: Record<ReportType, SummaryCardDef[]> = {
   ],
 };
 
-const COLUMNS: Record<ReportType, ReportColumn[]> = {
+export const COLUMNS: Record<ReportType, ReportColumn[]> = {
   delivery: [
     { label: 'Tracking #', width: 90, render: (r) => <Text style={styles.cellText}>{truncate(r.trackingNumber, 10)}</Text> },
     { label: 'Customer', width: 120, render: (r) => <Text style={styles.cellText}>{truncate(r.customerName, 15)}</Text> },

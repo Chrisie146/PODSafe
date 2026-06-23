@@ -32,4 +32,4 @@ echo "- Integration Tests: 0 (pending setup)"
 echo ""
 
 echo "📋 Next: Perform manual testing"
-echo "   See TESTING_CHECKLIST.md for details"
+echo "   Review the relevant test files and current README for next steps"

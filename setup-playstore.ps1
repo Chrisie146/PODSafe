@@ -173,7 +173,7 @@ foreach ($step in $steps) {
 }
 
 Write-Info "Next steps:"
-Write-Info "1. Review PLAYSTORE_UPLOAD_GUIDE.md for full instructions"
+Write-Info "1. Review the current Google Play Console release requirements before uploading"
 Write-Info "2. Create app listing in Google Play Console"
 Write-Info "3. Upload app bundle: build\app\outputs\bundle\release\app-release.aab"
 Write-Info "4. Complete store listing with screenshots and details"

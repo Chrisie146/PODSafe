@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// These tests are disabled because AuthProvider requires Firebase Auth
 /// to be initialized. Provider tests should be run as integration tests.
 ///
-/// See PHASE_2_WIDGET_TESTING.md for solutions to enable these tests.
+/// Add Firebase emulator-backed integration coverage when these tests are enabled.
 
 void main() {
   group('AuthProvider Tests (Deferred)', () {
