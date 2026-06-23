@@ -80,3 +80,7 @@ yarn-error.log
 .env.development
 .env.production
 .env.local
+
+# RNW web target — local Firebase web config (never commit; .env.web.example is the template)
+.env.web
+dist/
