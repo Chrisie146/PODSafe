@@ -24,10 +24,10 @@ export const linking: LinkingOptions<RootStackParamList> = {
           token: (token: string) => token,
         },
       },
-      // Auth/Home are not part of the public link surface — no path needed, they're
-      // resolved by useAuthStore's currentUser state in RootNavigator, not a URL.
-      Auth: '',
-      Home: '',
+      // Auth/Home are intentionally absent from the link surface — they are resolved
+      // by useAuthStore's currentUser state in RootNavigator, not a URL. Giving them
+      // a path (even '') makes React Navigation's web linking throw "conflicting
+      // screens with the same pattern", since both would resolve to ''.
     },
   },
 };
