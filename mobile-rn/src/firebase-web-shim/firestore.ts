@@ -17,6 +17,13 @@ import {
   writeBatch,
   runTransaction as fbRunTransaction,
   connectFirestoreEmulator,
+  serverTimestamp as fbServerTimestamp,
+  increment as fbIncrement,
+  arrayUnion as fbArrayUnion,
+  arrayRemove as fbArrayRemove,
+  documentId as fbDocumentId,
+  Timestamp as FbTimestamp,
+  GeoPoint as FbGeoPoint,
   type Firestore,
   type DocumentReference as FbDocRef,
   type CollectionReference as FbCollRef,
@@ -173,6 +180,36 @@ function runTransactionShim<T>(db: Firestore, fn: (tx: TransactionShim) => Promi
 
 export default function firestore(): FirestoreModule {
   return makeModule(getFirestore(getWebFirebaseApp()));
+}
+
+// Statics attached to the default export, mirroring @react-native-firebase/firestore.
+const FieldValue = {
+  serverTimestamp: () => fbServerTimestamp(),
+  increment: (n: number) => fbIncrement(n),
+  arrayUnion: (...values: unknown[]) => fbArrayUnion(...values),
+  arrayRemove: (...values: unknown[]) => fbArrayRemove(...values),
+};
+const FieldPath = {
+  documentId: () => fbDocumentId(),
+};
+
+(firestore as unknown as Record<string, unknown>).Timestamp = FbTimestamp;
+(firestore as unknown as Record<string, unknown>).GeoPoint = FbGeoPoint;
+(firestore as unknown as Record<string, unknown>).FieldValue = FieldValue;
+(firestore as unknown as Record<string, unknown>).FieldPath = FieldPath;
+
+// Module-level alias to the Query class instance type, so the namespace member
+// `Query` below can reference it without shadowing itself.
+type QueryInstance = Query;
+
+export namespace FirebaseFirestoreTypes {
+  export type Module = FirestoreModule;
+  export type DocumentSnapshot = import('firebase/firestore').DocumentSnapshot;
+  export type QueryDocumentSnapshot = import('firebase/firestore').QueryDocumentSnapshot;
+  export type QuerySnapshot = import('firebase/firestore').QuerySnapshot;
+  export type Query = QueryInstance;
+  export type Timestamp = FbTimestamp;
+  export type GeoPoint = FbGeoPoint;
 }
 
 export { DocRef, CollectionRef, Query };
