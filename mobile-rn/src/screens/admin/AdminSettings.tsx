@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUserManagementStore } from '../../stores/useUserManagementStore';
@@ -8,8 +8,17 @@ import { pickLogoImage, uploadAppLogo, uploadCompanyLogo } from '../../repositor
 import { backupAllData } from '../../repositories/comprehensiveBackupService';
 import { getOnboardingDebugData, resetOnboarding } from '../../repositories/onboardingService';
 import { ALL_USER_ROLES, UserRole, userRoleDisplayName } from '../../models/user';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
+import {
+  AppIcon,
+  AppIconName,
+  AppModal,
+  Card,
+  FormField,
+  PrimaryButton,
+  SecondaryButton,
+} from '../../components/ui';
 
 /**
  * Ported from lib/screens/admin/admin_settings_screen.dart (verified against source on
@@ -44,8 +53,12 @@ import { textStyles } from '../../theme/textStyles';
  *   "Data Backup" stub distinct from the real backup below, Claim Workflows, Required
  *   Documentation, Claim Processing, Access Control, Third-party APIs, Webhooks) are
  *   ported as simple Alert.alert()s, same as the Dart source's SnackBars/dialogs.
- * - Modal dialogs replace Dart's AlertDialogs; Switch (RN built-in) replaces
- *   SwitchListTile; Slider becomes a +/- stepper row (no slider library installed).
+ * - Slider becomes a +/- stepper row (no slider library installed).
+ *
+ * UI/UX Refresh Phase 5: rebuilt on the shared primitives (Card/FormField/AppModal/
+ * PrimaryButton) and the SVG AppIcon pack; the redundant in-screen navy header bar was
+ * dropped in favour of the navigator header, and the global Save action moved to a
+ * persistent footer. Behaviour, Firestore writes, validation, and store calls unchanged.
  */
 interface AdminSettingsProps {
   navigation: { goBack: () => void; navigate: (screen: string) => void };
@@ -403,76 +416,61 @@ export default function AdminSettings({ navigation }: AdminSettingsProps) {
   if (!currentUser) {
     return (
       <View style={styles.centered}>
-        <Text>Please log in</Text>
+        <Text style={textStyles.bodyMedium}>Please log in</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Text style={[textStyles.heading2, { color: colors.onPrimary }]}>⚙️ Settings</Text>
-        {isSaving ? (
-          <ActivityIndicator color={colors.white} />
-        ) : (
-          <Pressable onPress={handleSaveAll}>
-            <Text style={styles.headerSaveText}>Save</Text>
-          </Pressable>
-        )}
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.brandCard, { backgroundColor: `${primaryColor}1A` }]}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Card padding="spacious" style={[styles.brandCard, { backgroundColor: `${primaryColor}1A`, borderColor: `${primaryColor}33` }]}>
           <View style={[styles.brandLogo, { borderColor: `${primaryColor}33` }]}>
-            {companyLogoUrl ? <Image source={{ uri: companyLogoUrl }} style={styles.brandLogoImage} /> : <Text style={styles.brandLogoIcon}>🏢</Text>}
+            {companyLogoUrl ? <Image source={{ uri: companyLogoUrl }} style={styles.brandLogoImage} /> : <AppIcon name="image" size={30} color={primaryColor} />}
           </View>
           <View style={styles.brandTextBox}>
             <Text style={styles.brandName}>{companyName || 'Company Name'}</Text>
             <Text style={styles.brandSubtitle}>{companyEmail || 'No email set'}</Text>
             <Text style={[styles.brandAppName, { color: primaryColor }]}>{appName}</Text>
           </View>
-          <View style={[styles.brandColorSwatch, { backgroundColor: primaryColor }]}>
-            <Text style={styles.brandColorIcon}>🎨</Text>
-          </View>
-        </View>
+          <View style={[styles.brandColorSwatch, { backgroundColor: primaryColor }]} />
+        </Card>
 
         <SectionHeader title="Company Settings" />
-        <Card loading={isLoadingCompanyInfo}>
-          <SettingRow icon="🏢" title="Company Information" subtitle="Update company name, logo, contact details" onPress={() => setShowCompanyInfo(true)} />
+        <SettingCard loading={isLoadingCompanyInfo}>
+          <SettingRow icon="home" title="Company Information" subtitle="Update company name, logo, contact details" onPress={() => setShowCompanyInfo(true)} />
           <Divider />
-          <SettingRow icon="🎨" title="Branding & Theme" subtitle="Customize app colors, logos, and branding" onPress={() => setShowBrandingTheme(true)} />
+          <SettingRow icon="image" title="Branding & Theme" subtitle="Customize app colors, logos, and branding" onPress={() => setShowBrandingTheme(true)} />
           <Divider />
-          <SettingRow icon="📍" title="Business Address" subtitle="Update business location and service areas" onPress={() => setShowCompanyInfo(true)} />
-        </Card>
+          <SettingRow icon="location" title="Business Address" subtitle="Update business location and service areas" onPress={() => setShowCompanyInfo(true)} />
+        </SettingCard>
 
         <SectionHeader title="User Management" />
-        <Card>
-          <SettingRow icon="👤" title="Register New User" subtitle="Add a new user to the system" onPress={() => setShowRegisterUser(true)} />
+        <SettingCard>
+          <SettingRow icon="user" title="Register New User" subtitle="Add a new user to the system" onPress={() => setShowRegisterUser(true)} />
           <Divider />
-          <SettingRow icon="🛡️" title="Role Permissions" subtitle="Manage user roles and access permissions" onPress={() => setShowRolePermissions(true)} />
+          <SettingRow icon="shield" title="Role Permissions" subtitle="Manage user roles and access permissions" onPress={() => setShowRolePermissions(true)} />
           <Divider />
-          <SettingRow icon="🔒" title="Access Control" subtitle="Set up multi-factor authentication and access policies" onPress={() => showComingSoon('Access Control')} />
-        </Card>
+          <SettingRow icon="lock" title="Access Control" subtitle="Set up multi-factor authentication and access policies" onPress={() => showComingSoon('Access Control')} />
+        </SettingCard>
 
         <SectionHeader title="Role Permissions" />
-        <Card>
+        <SettingCard>
           <Text style={textStyles.bodyMedium}>Configure what each user role can access and do in the system. Changes take effect immediately.</Text>
-          <Pressable style={styles.fullWidthButton} onPress={() => setShowRolePermissions(true)}>
-            <Text style={textStyles.buttonText}>Manage Role Permissions</Text>
-          </Pressable>
-        </Card>
+          <PrimaryButton label="Manage Role Permissions" icon="shield" onPress={() => setShowRolePermissions(true)} style={styles.fullWidthButton} />
+        </SettingCard>
 
         <SectionHeader title="Delivery Settings" />
-        <Card>
-          <SettingRow icon="🕐" title="Delivery Time Windows" subtitle="Configure default delivery time slots and scheduling" onPress={() => showComingSoon('Delivery Time Windows')} />
+        <SettingCard>
+          <SettingRow icon="calendar" title="Delivery Time Windows" subtitle="Configure default delivery time slots and scheduling" onPress={() => showComingSoon('Delivery Time Windows')} />
           <Divider />
-          <SettingRow icon="🚚" title="Delivery Status Workflow" subtitle="Customize delivery status options and transitions" onPress={() => showComingSoon('Delivery Status Workflow')} />
+          <SettingRow icon="truck" title="Delivery Status Workflow" subtitle="Customize delivery status options and transitions" onPress={() => showComingSoon('Delivery Status Workflow')} />
           <Divider />
-          <SettingRow icon="🗺️" title="Route Optimization" subtitle="Configure route planning and optimization settings" onPress={() => showComingSoon('Route Optimization')} />
-        </Card>
+          <SettingRow icon="map" title="Route Optimization" subtitle="Configure route planning and optimization settings" onPress={() => showComingSoon('Route Optimization')} />
+        </SettingCard>
 
         <SectionHeader title="Notification Settings" />
-        <Card>
+        <SettingCard>
           <Text style={styles.subheading}>Notification Channels</Text>
           <SwitchRow label="Email Notifications" subtitle="Enable email alerts for important events" value={emailNotificationsEnabled} onChange={setEmailNotificationsEnabled} />
           <SwitchRow label="SMS Notifications" subtitle="Enable SMS alerts for urgent updates" value={smsNotificationsEnabled} onChange={setSmsNotificationsEnabled} />
@@ -483,10 +481,10 @@ export default function AdminSettings({ navigation }: AdminSettingsProps) {
           <SwitchRow label="Delivery Failed" subtitle="Alert when delivery fails" value={notifyOnDeliveryFailed} onChange={setNotifyOnDeliveryFailed} />
           <SwitchRow label="New Claim Received" subtitle="Notify on new claim submissions" value={notifyOnNewClaim} onChange={setNotifyOnNewClaim} />
           <SwitchRow label="Admin Issues" subtitle="Alert admins on critical issues" value={notifyAdminsOnIssues} onChange={setNotifyAdminsOnIssues} />
-        </Card>
+        </SettingCard>
 
         <SectionHeader title="Security Settings" />
-        <Card>
+        <SettingCard>
           <Text style={styles.subheading}>Password Requirements</Text>
           <StepperRow label="Minimum Password Length" value={passwordMinLength} min={6} max={20} onChange={setPasswordMinLength} />
           <SwitchRow label="Require Special Characters" subtitle="Passwords must include !@#$%^&*" value={requireSpecialCharacters} onChange={setRequireSpecialCharacters} />
@@ -495,215 +493,211 @@ export default function AdminSettings({ navigation }: AdminSettingsProps) {
           <StepperRow label="Session Timeout (minutes)" value={sessionTimeoutMinutes} min={5} max={120} step={5} onChange={setSessionTimeoutMinutes} />
           <SwitchRow label="Two-Factor Authentication" subtitle="Require 2FA for admin accounts" value={enableTwoFactorAuth} onChange={setEnableTwoFactorAuth} />
           <SwitchRow label="Audit Logging" subtitle="Log all user actions for compliance" value={logAllUserActions} onChange={setLogAllUserActions} />
-        </Card>
+        </SettingCard>
 
         <SectionHeader title="Integration Settings" />
-        <Card>
-          <SettingRow icon="🔄" title="ABServe Integration" subtitle="Import deliveries from ABServe ERP system" onPress={() => navigation.navigate('AbaserveImport')} />
+        <SettingCard>
+          <SettingRow icon="download" title="ABServe Integration" subtitle="Import deliveries from ABServe ERP system" onPress={() => navigation.navigate('AbaserveImport')} />
           <Divider />
-          <SettingRow icon="🏢" title="Business Central Integration" subtitle="Configure Microsoft Dynamics 365 Business Central connection" onPress={() => navigation.navigate('BcSettings')} />
+          <SettingRow icon="link" title="Business Central Integration" subtitle="Configure Microsoft Dynamics 365 Business Central connection" onPress={() => navigation.navigate('BcSettings')} />
           <Divider />
-          <SettingRow icon="☁️" title="Third-party APIs" subtitle="Connect with external services and APIs" onPress={() => setShowApiSettings(true)} />
+          <SettingRow icon="key" title="Third-party APIs" subtitle="Connect with external services and APIs" onPress={() => setShowApiSettings(true)} />
           <Divider />
-          <SettingRow icon="🪝" title="Webhooks" subtitle="Configure webhooks for event notifications" onPress={() => setShowWebhookSettings(true)} />
-        </Card>
+          <SettingRow icon="activity" title="Webhooks" subtitle="Configure webhooks for event notifications" onPress={() => setShowWebhookSettings(true)} />
+        </SettingCard>
 
         <SectionHeader title="System Settings" />
-        <Card>
-          <SettingRow icon="🌐" title="Language & Localization" subtitle="Set default language and regional preferences" onPress={() => showComingSoon('Language & Localization')} />
+        <SettingCard>
+          <SettingRow icon="message" title="Language & Localization" subtitle="Set default language and regional preferences" onPress={() => showComingSoon('Language & Localization')} />
           <Divider />
-          <SettingRow icon="🕐" title="Timezone Settings" subtitle="Configure system timezone and date formats" onPress={() => showComingSoon('Timezone Settings')} />
+          <SettingRow icon="calendar" title="Timezone Settings" subtitle="Configure system timezone and date formats" onPress={() => showComingSoon('Timezone Settings')} />
           <Divider />
-          <SettingRow icon="💾" title="Data Backup" subtitle="Schedule automatic backups and retention policies" onPress={() => showComingSoon('Data Backup')} />
-        </Card>
+          <SettingRow icon="copy" title="Data Backup" subtitle="Schedule automatic backups and retention policies" onPress={() => showComingSoon('Data Backup')} />
+        </SettingCard>
 
         <SectionHeader title="Driver Settings" />
-        <Card loading={isLoadingDriverSettings}>
-          <SwitchRow label="GPS Tracking" subtitle="Enable real-time GPS tracking for drivers" value={gpsTrackingEnabled} onChange={setGpsTrackingEnabled} icon="📍" />
+        <SettingCard loading={isLoadingDriverSettings}>
+          <SwitchRow label="GPS Tracking" subtitle="Enable real-time GPS tracking for drivers" value={gpsTrackingEnabled} onChange={setGpsTrackingEnabled} icon="location" />
           {gpsTrackingEnabled ? (
             <View style={styles.nestedSection}>
               <FrequencySelector label="Update Frequency" value={gpsUpdateFrequency} options={['15', '30', '60', '120']} unit="seconds" onChange={setGpsUpdateFrequency} />
-              <SwitchRow label="Privacy Mode" subtitle="Limit GPS data collection when not on delivery" value={gpsPrivacyMode} onChange={setGpsPrivacyMode} icon="🕵️" />
+              <SwitchRow label="Privacy Mode" subtitle="Limit GPS data collection when not on delivery" value={gpsPrivacyMode} onChange={setGpsPrivacyMode} icon="eye" />
             </View>
           ) : null}
           <Divider />
-          <SwitchRow label="Require Delivery Photos" subtitle="Drivers must capture photos for each delivery" value={requireDeliveryPhotos} onChange={setRequireDeliveryPhotos} icon="📷" />
+          <SwitchRow label="Require Delivery Photos" subtitle="Drivers must capture photos for each delivery" value={requireDeliveryPhotos} onChange={setRequireDeliveryPhotos} icon="camera" />
           <Divider />
-          <SwitchRow label="Require Signature Photos" subtitle="Capture photos of customer signatures" value={requireSignaturePhotos} onChange={setRequireSignaturePhotos} icon="✍️" />
+          <SwitchRow label="Require Signature Photos" subtitle="Capture photos of customer signatures" value={requireSignaturePhotos} onChange={setRequireSignaturePhotos} icon="signature" />
           <Divider />
-          <SwitchRow label="Require Location Photos" subtitle="Photos showing delivery location context" value={requireLocationPhotos} onChange={setRequireLocationPhotos} icon="🗺️" />
+          <SwitchRow label="Require Location Photos" subtitle="Photos showing delivery location context" value={requireLocationPhotos} onChange={setRequireLocationPhotos} icon="map" />
           <Divider />
-          <SwitchRow label="Offline Mode" subtitle="Allow drivers to work without network coverage" value={offlineModeEnabled} onChange={setOfflineModeEnabled} icon="📴" />
+          <SwitchRow label="Offline Mode" subtitle="Allow drivers to work without network coverage" value={offlineModeEnabled} onChange={setOfflineModeEnabled} icon="wifiOff" />
           {offlineModeEnabled ? (
             <View style={styles.nestedSection}>
               <FrequencySelector label="Sync Frequency" value={syncFrequency} options={['5', '15', '30', '60']} unit="minutes" onChange={setSyncFrequency} />
-              <SwitchRow label="Auto-sync on Network" subtitle="Automatically sync data when network is available" value={autoSyncOnNetwork} onChange={setAutoSyncOnNetwork} icon="🔄" />
+              <SwitchRow label="Auto-sync on Network" subtitle="Automatically sync data when network is available" value={autoSyncOnNetwork} onChange={setAutoSyncOnNetwork} icon="activity" />
             </View>
           ) : null}
-        </Card>
+        </SettingCard>
 
         <SectionHeader title="Claim Settings" />
-        <Card>
-          <SettingRow icon="📋" title="Claim Workflows" subtitle="Configure claim approval processes and requirements" onPress={() => showComingSoon('Claim Workflows')} />
+        <SettingCard>
+          <SettingRow icon="clipboard" title="Claim Workflows" subtitle="Configure claim approval processes and requirements" onPress={() => showComingSoon('Claim Workflows')} />
           <Divider />
-          <SettingRow icon="📎" title="Required Documentation" subtitle="Set documentation requirements for claims" onPress={() => showComingSoon('Required Documentation')} />
+          <SettingRow icon="file" title="Required Documentation" subtitle="Set documentation requirements for claims" onPress={() => showComingSoon('Required Documentation')} />
           <Divider />
-          <SettingRow icon="⏱️" title="Claim Processing" subtitle="Configure claim processing timeframes and SLAs" onPress={() => showComingSoon('Claim Processing')} />
-        </Card>
+          <SettingRow icon="activity" title="Claim Processing" subtitle="Configure claim processing timeframes and SLAs" onPress={() => showComingSoon('Claim Processing')} />
+        </SettingCard>
 
         <SectionHeader title="Data & Backups" />
-        <Card>
-          <SettingRow icon="☁️" title="Backup All Data" subtitle="Create a full backup of company data (manual)" onPress={handleBackup} />
-        </Card>
+        <SettingCard>
+          <SettingRow icon="download" title="Backup All Data" subtitle="Create a full backup of company data (manual)" onPress={handleBackup} />
+        </SettingCard>
 
         <SectionHeader title="Debug & Testing" />
-        <Card>
-          <SettingRow icon="🔄" title="Reset Onboarding" subtitle="Reset onboarding status to test the onboarding flow" onPress={handleResetOnboarding} />
+        <SettingCard>
+          <SettingRow icon="activity" title="Reset Onboarding" subtitle="Reset onboarding status to test the onboarding flow" onPress={handleResetOnboarding} />
           <Divider />
-          <SettingRow icon="ℹ️" title="Onboarding Debug Info" subtitle="View current onboarding status and data" onPress={handleShowOnboardingDebug} />
-        </Card>
+          <SettingRow icon="info" title="Onboarding Debug Info" subtitle="View current onboarding status and data" onPress={handleShowOnboardingDebug} />
+        </SettingCard>
       </ScrollView>
 
-      {backupMessage ? (
-        <Modal visible transparent animationType="fade">
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, shadows.card, styles.backupModalCard]}>
-              <ActivityIndicator color={colors.primary} />
-              <Text style={[textStyles.bodyMedium, styles.backupMessageText]}>{backupMessage}</Text>
-            </View>
+      <View style={styles.footer}>
+        <PrimaryButton
+          label={isSaving ? 'Saving...' : 'Save All Settings'}
+          icon="check"
+          loading={isSaving}
+          disabled={isSaving}
+          onPress={handleSaveAll}
+        />
+      </View>
+
+      <AppModal visible={!!backupMessage} title="Backup in progress" dismissable={false} onClose={() => {}}>
+        <View style={styles.backupBody}>
+          <ActivityIndicator color={colors.active} />
+          <Text style={[textStyles.bodyMedium, styles.backupMessageText]}>{backupMessage}</Text>
+        </View>
+      </AppModal>
+
+      <AppModal
+        visible={showCompanyInfo}
+        title="Company Information"
+        onClose={() => setShowCompanyInfo(false)}
+        footer={
+          <View style={styles.modalActionsRow}>
+            <SecondaryButton label="Cancel" onPress={() => setShowCompanyInfo(false)} style={styles.modalActionButton} />
+            <PrimaryButton label={isSaving ? 'Saving...' : 'Save'} loading={isSaving} disabled={isSaving} onPress={handleSaveCompanyInfoOnly} style={styles.modalActionButton} />
           </View>
-        </Modal>
-      ) : null}
+        }
+      >
+        <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+          <LogoUploadRow logoUrl={companyLogoUrl} onUpload={handleUploadCompanyLogo} />
+          <FormField label="Company Name" value={companyName} onChangeText={setCompanyName} />
+          <FormField label="Email Address" value={companyEmail} onChangeText={setCompanyEmail} keyboardType="email-address" autoCapitalize="none" />
+          <FormField label="Phone Number" value={companyPhone} onChangeText={setCompanyPhone} keyboardType="phone-pad" />
+          <FormField label="Business Address" value={companyAddress} onChangeText={setCompanyAddress} multiline />
+          <FormField label="Website" value={companyWebsite} onChangeText={setCompanyWebsite} keyboardType="url" autoCapitalize="none" />
+          <FormField label="Company Registration Number" value={companyRegistration} onChangeText={setCompanyRegistration} />
+          <FormField label="Tax Number" value={taxNumber} onChangeText={setTaxNumber} />
+          <FormField label="Company Description" value={companyDescription} onChangeText={setCompanyDescription} multiline />
+        </ScrollView>
+      </AppModal>
 
-      <Modal visible={showCompanyInfo} transparent animationType="fade" onRequestClose={() => setShowCompanyInfo(false)}>
-        <View style={styles.modalBackdrop}>
-          <ScrollView style={[styles.modalCard, shadows.card]}>
-            <Text style={textStyles.heading3}>Company Information</Text>
-            <Pressable style={styles.logoUploadRow} onPress={handleUploadCompanyLogo}>
-              <View style={styles.logoPreview}>
-                {companyLogoUrl ? <Image source={{ uri: companyLogoUrl }} style={styles.brandLogoImage} /> : <Text style={styles.brandLogoIcon}>🏢</Text>}
-              </View>
-              <Text style={styles.uploadLinkText}>📤 Upload Logo</Text>
-            </Pressable>
-            <LabeledInput label="Company Name" value={companyName} onChangeText={setCompanyName} />
-            <LabeledInput label="Email Address" value={companyEmail} onChangeText={setCompanyEmail} keyboardType="email-address" />
-            <LabeledInput label="Phone Number" value={companyPhone} onChangeText={setCompanyPhone} keyboardType="phone-pad" />
-            <LabeledInput label="Business Address" value={companyAddress} onChangeText={setCompanyAddress} multiline />
-            <LabeledInput label="Website" value={companyWebsite} onChangeText={setCompanyWebsite} keyboardType="url" />
-            <LabeledInput label="Company Registration Number" value={companyRegistration} onChangeText={setCompanyRegistration} />
-            <LabeledInput label="Tax Number" value={taxNumber} onChangeText={setTaxNumber} />
-            <LabeledInput label="Company Description" value={companyDescription} onChangeText={setCompanyDescription} multiline />
-            <View style={styles.modalActionsRow}>
-              <Pressable style={styles.secondaryButton} onPress={() => setShowCompanyInfo(false)}>
-                <Text style={styles.secondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalCloseButton} disabled={isSaving} onPress={handleSaveCompanyInfoOnly}>
-                {isSaving ? <ActivityIndicator color={colors.white} /> : <Text style={textStyles.buttonText}>Save</Text>}
-              </Pressable>
-            </View>
-          </ScrollView>
+      <AppModal
+        visible={showBrandingTheme}
+        title="Branding & Theme"
+        onClose={() => setShowBrandingTheme(false)}
+        footer={
+          <View style={styles.modalActionsRow}>
+            <SecondaryButton label="Cancel" onPress={() => setShowBrandingTheme(false)} style={styles.modalActionButton} />
+            <PrimaryButton label={isSaving ? 'Saving...' : 'Save'} loading={isSaving} disabled={isSaving} onPress={handleSaveBrandingAndClose} style={styles.modalActionButton} />
+          </View>
+        }
+      >
+        <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+          <FormField label="App Name" value={appName} onChangeText={setAppName} />
+          <LogoUploadRow logoUrl={appLogoUrl} onUpload={handleUploadAppLogo} label="Upload App Logo" />
+          <Text style={[textStyles.label, styles.themeColorsLabel]}>Theme Colors</Text>
+          <ColorPickerRow label="Primary Color" color={primaryColor} onSelect={setPrimaryColor} />
+          <ColorPickerRow label="Accent Color" color={accentColor} onSelect={setAccentColor} />
+          <ColorPickerRow label="Warning Color" color={warningColor} onSelect={setWarningColor} />
+          <ColorPickerRow label="Success Color" color={successColor} onSelect={setSuccessColor} />
+        </ScrollView>
+      </AppModal>
+
+      <AppModal
+        visible={showRegisterUser}
+        title="Register New User"
+        onClose={() => setShowRegisterUser(false)}
+        footer={
+          <View style={styles.modalActionsRow}>
+            <SecondaryButton label="Cancel" onPress={() => setShowRegisterUser(false)} style={styles.modalActionButton} />
+            <PrimaryButton label={isRegisteringUser ? 'Registering...' : 'Register'} loading={isRegisteringUser} disabled={isRegisteringUser} onPress={handleRegisterUser} style={styles.modalActionButton} />
+          </View>
+        }
+      >
+        <View style={styles.modalScrollContent}>
+          <FormField label="Email" value={regEmail} onChangeText={setRegEmail} keyboardType="email-address" autoCapitalize="none" />
+          <FormField label="Password" value={regPassword} onChangeText={setRegPassword} secureTextEntry />
+          <FormField label="Display Name" value={regDisplayName} onChangeText={setRegDisplayName} />
+          <Text style={[textStyles.label, styles.roleLabel]}>Role</Text>
+          <View style={styles.roleChipRow}>
+            {ALL_USER_ROLES.map((role) => (
+              <Chip key={role} label={userRoleDisplayName(role)} selected={regRole === role} onPress={() => setRegRole(role)} />
+            ))}
+          </View>
         </View>
-      </Modal>
+      </AppModal>
 
-      <Modal visible={showBrandingTheme} transparent animationType="fade" onRequestClose={() => setShowBrandingTheme(false)}>
-        <View style={styles.modalBackdrop}>
-          <ScrollView style={[styles.modalCard, shadows.card]}>
-            <Text style={textStyles.heading3}>Branding & Theme</Text>
-            <LabeledInput label="App Name" value={appName} onChangeText={setAppName} />
-            <Pressable style={styles.logoUploadRow} onPress={handleUploadAppLogo}>
-              <View style={styles.logoPreview}>
-                {appLogoUrl ? <Image source={{ uri: appLogoUrl }} style={styles.brandLogoImage} /> : <Text style={styles.brandLogoIcon}>🖼️</Text>}
-              </View>
-              <Text style={styles.uploadLinkText}>📤 Upload App Logo</Text>
-            </Pressable>
-            <Text style={[textStyles.bodySmall, styles.themeColorsLabel]}>Theme Colors</Text>
-            <ColorPickerRow label="Primary Color" color={primaryColor} onSelect={setPrimaryColor} />
-            <ColorPickerRow label="Accent Color" color={accentColor} onSelect={setAccentColor} />
-            <ColorPickerRow label="Warning Color" color={warningColor} onSelect={setWarningColor} />
-            <ColorPickerRow label="Success Color" color={successColor} onSelect={setSuccessColor} />
-            <View style={styles.modalActionsRow}>
-              <Pressable style={styles.secondaryButton} onPress={() => setShowBrandingTheme(false)}>
-                <Text style={styles.secondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalCloseButton} disabled={isSaving} onPress={handleSaveBrandingAndClose}>
-                {isSaving ? <ActivityIndicator color={colors.white} /> : <Text style={textStyles.buttonText}>Save</Text>}
-              </Pressable>
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
-
-      <Modal visible={showRegisterUser} transparent animationType="fade" onRequestClose={() => setShowRegisterUser(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, shadows.card]}>
-            <Text style={textStyles.heading3}>Register New User</Text>
-            <LabeledInput label="Email" value={regEmail} onChangeText={setRegEmail} keyboardType="email-address" autoCapitalize="none" />
-            <LabeledInput label="Password" value={regPassword} onChangeText={setRegPassword} secureTextEntry />
-            <LabeledInput label="Display Name" value={regDisplayName} onChangeText={setRegDisplayName} />
-            <Text style={[textStyles.bodySmall, styles.roleLabel]}>Role</Text>
-            <View style={styles.roleChipRow}>
-              {ALL_USER_ROLES.map((role) => (
-                <Pressable key={role} style={[styles.roleChip, regRole === role && styles.roleChipSelected]} onPress={() => setRegRole(role)}>
-                  <Text style={[styles.roleChipText, regRole === role && styles.roleChipTextSelected]}>{userRoleDisplayName(role)}</Text>
-                </Pressable>
+      <AppModal
+        visible={showRolePermissions}
+        title="Role Permissions Management"
+        onClose={() => setShowRolePermissions(false)}
+        footer={
+          <View style={styles.modalActionsRow}>
+            <SecondaryButton label="Cancel" onPress={() => setShowRolePermissions(false)} style={styles.modalActionButton} />
+            <PrimaryButton label="Save Changes" onPress={handleSaveRolePermissions} style={styles.modalActionButton} />
+          </View>
+        }
+      >
+        <Text style={[textStyles.bodyMedium, styles.permissionsIntro]}>Configure permissions for each role. Toggle to grant access.</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View>
+            <View style={styles.permissionsHeaderRow}>
+              <Text style={[styles.permissionsHeaderCell, styles.permissionsNameCol]}>Permission</Text>
+              {PERMISSION_ROLE_COLUMNS.map((role) => (
+                <Text key={role} style={[styles.permissionsHeaderCell, styles.permissionsRoleCol]}>
+                  {userRoleDisplayName(role)}
+                </Text>
               ))}
             </View>
-            <View style={styles.modalActionsRow}>
-              <Pressable style={styles.secondaryButton} onPress={() => setShowRegisterUser(false)}>
-                <Text style={styles.secondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalCloseButton} disabled={isRegisteringUser} onPress={handleRegisterUser}>
-                {isRegisteringUser ? <ActivityIndicator color={colors.white} /> : <Text style={textStyles.buttonText}>Register</Text>}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={showRolePermissions} transparent animationType="fade" onRequestClose={() => setShowRolePermissions(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, shadows.card, styles.permissionsModalCard]}>
-            <Text style={textStyles.heading3}>Role Permissions Management</Text>
-            <Text style={[textStyles.bodyMedium, styles.permissionsIntro]}>Configure permissions for each role. Toggle to grant access.</Text>
-            <ScrollView horizontal>
-              <View>
-                <View style={styles.permissionsHeaderRow}>
-                  <Text style={[styles.permissionsHeaderCell, styles.permissionsNameCol]}>Permission</Text>
-                  {PERMISSION_ROLE_COLUMNS.map((role) => (
-                    <Text key={role} style={[styles.permissionsHeaderCell, styles.permissionsRoleCol]}>
-                      {userRoleDisplayName(role)}
-                    </Text>
-                  ))}
+            <ScrollView style={styles.permissionsBody} showsVerticalScrollIndicator={false}>
+              {AVAILABLE_PERMISSIONS.map((permission) => (
+                <View key={permission} style={styles.permissionsRow}>
+                  <Text style={[textStyles.bodySmall, styles.permissionsNameCol]}>{formatPermissionName(permission)}</Text>
+                  {PERMISSION_ROLE_COLUMNS.map((role) => {
+                    const granted = rolePermissions[role].has(permission);
+                    return (
+                      <Pressable
+                        key={role}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: granted }}
+                        accessibilityLabel={`${formatPermissionName(permission)} for ${userRoleDisplayName(role)}`}
+                        style={styles.permissionsRoleCol}
+                        onPress={() => togglePermission(role, permission, !granted)}
+                      >
+                        <View style={[styles.permissionBox, granted && styles.permissionBoxChecked]}>
+                          {granted ? <AppIcon name="check" size={14} color={colors.onPrimary} /> : null}
+                        </View>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                <ScrollView style={styles.permissionsBody}>
-                  {AVAILABLE_PERMISSIONS.map((permission) => (
-                    <View key={permission} style={styles.permissionsRow}>
-                      <Text style={[textStyles.bodySmall, styles.permissionsNameCol]}>{formatPermissionName(permission)}</Text>
-                      {PERMISSION_ROLE_COLUMNS.map((role) => (
-                        <Pressable
-                          key={role}
-                          style={styles.permissionsRoleCol}
-                          onPress={() => togglePermission(role, permission, !rolePermissions[role].has(permission))}
-                        >
-                          <Text style={styles.checkboxGlyph}>{rolePermissions[role].has(permission) ? '☑' : '☐'}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
+              ))}
             </ScrollView>
-            <View style={styles.modalActionsRow}>
-              <Pressable style={styles.secondaryButton} onPress={() => setShowRolePermissions(false)}>
-                <Text style={styles.secondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalCloseButton} onPress={handleSaveRolePermissions}>
-                <Text style={textStyles.buttonText}>Save Changes</Text>
-              </Pressable>
-            </View>
           </View>
-        </View>
-      </Modal>
+        </ScrollView>
+      </AppModal>
 
       <InfoModal
         visible={showApiSettings}
@@ -730,30 +724,30 @@ function SectionHeader({ title }: { title: string }) {
   return <Text style={[textStyles.heading3, styles.sectionHeader]}>{title}</Text>;
 }
 
-function Card({ children, loading }: { children: React.ReactNode; loading?: boolean }) {
+function SettingCard({ children, loading }: { children: React.ReactNode; loading?: boolean }) {
   if (loading) {
     return (
-      <View style={[styles.card, shadows.card, styles.cardLoading]}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <Card style={styles.cardLoading}>
+        <ActivityIndicator color={colors.active} />
+      </Card>
     );
   }
-  return <View style={[styles.card, shadows.card]}>{children}</View>;
+  return <Card>{children}</Card>;
 }
 
 function Divider() {
   return <View style={styles.divider} />;
 }
 
-function SettingRow({ icon, title, subtitle, onPress }: { icon: string; title: string; subtitle: string; onPress: () => void }) {
+function SettingRow({ icon, title, subtitle, onPress }: { icon: AppIconName; title: string; subtitle: string; onPress: () => void }) {
   return (
-    <Pressable style={styles.settingRow} onPress={onPress}>
-      <Text style={styles.settingIcon}>{icon}</Text>
+    <Pressable accessibilityRole="button" style={styles.settingRow} onPress={onPress}>
+      <AppIcon name={icon} size={20} color={colors.shell} />
       <View style={styles.settingTextBox}>
         <Text style={styles.settingTitle}>{title}</Text>
         <Text style={styles.settingSubtitle}>{subtitle}</Text>
       </View>
-      <Text style={styles.chevron}>›</Text>
+      <AppIcon name="chevronRight" size={20} color={colors.contentSecondary} />
     </Pressable>
   );
 }
@@ -769,16 +763,16 @@ function SwitchRow({
   subtitle?: string;
   value: boolean;
   onChange: (value: boolean) => void;
-  icon?: string;
+  icon?: AppIconName;
 }) {
   return (
     <View style={styles.switchRow}>
-      {icon ? <Text style={styles.settingIcon}>{icon}</Text> : null}
+      {icon ? <AppIcon name={icon} size={20} color={colors.shell} /> : null}
       <View style={styles.settingTextBox}>
         <Text style={styles.settingTitle}>{label}</Text>
         {subtitle ? <Text style={styles.settingSubtitle}>{subtitle}</Text> : null}
       </View>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.primary }} />
+      <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.active, false: colors.border }} />
     </View>
   );
 }
@@ -788,12 +782,12 @@ function StepperRow({ label, value, min, max, step = 1, onChange }: { label: str
     <View style={styles.stepperRow}>
       <Text style={[textStyles.bodyMedium, styles.stepperLabel]}>{label}</Text>
       <View style={styles.stepperControls}>
-        <Pressable style={styles.stepperButton} onPress={() => onChange(Math.max(min, value - step))}>
-          <Text style={styles.stepperButtonText}>−</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${label}`} style={styles.stepperButton} onPress={() => onChange(Math.max(min, value - step))}>
+          <AppIcon name="minus" size={18} color={colors.shell} />
         </Pressable>
         <Text style={styles.stepperValue}>{value}</Text>
-        <Pressable style={styles.stepperButton} onPress={() => onChange(Math.min(max, value + step))}>
-          <Text style={styles.stepperButtonText}>+</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Increase ${label}`} style={styles.stepperButton} onPress={() => onChange(Math.min(max, value + step))}>
+          <AppIcon name="plus" size={18} color={colors.shell} />
         </Pressable>
       </View>
     </View>
@@ -806,13 +800,30 @@ function FrequencySelector({ label, value, options, unit, onChange }: { label: s
       <Text style={[textStyles.bodySmall, styles.frequencyLabel]}>
         {label}: {value} {unit}
       </Text>
-      <View style={styles.frequencyChipRow}>
+      <View style={styles.chipRow}>
         {options.map((option) => (
-          <Pressable key={option} style={[styles.frequencyChip, value === option && styles.frequencyChipSelected]} onPress={() => onChange(option)}>
-            <Text style={[styles.frequencyChipText, value === option && styles.frequencyChipTextSelected]}>{option}</Text>
-          </Pressable>
+          <Chip key={option} label={option} selected={value === option} onPress={() => onChange(option)} />
         ))}
       </View>
+    </View>
+  );
+}
+
+function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityState={{ selected }} style={[styles.chip, selected && styles.chipSelected]} onPress={onPress}>
+      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function LogoUploadRow({ logoUrl, onUpload, label = 'Upload Logo' }: { logoUrl?: string; onUpload: () => void; label?: string }) {
+  return (
+    <View style={styles.logoUploadRow}>
+      <View style={styles.logoPreview}>
+        {logoUrl ? <Image source={{ uri: logoUrl }} style={styles.brandLogoImage} /> : <AppIcon name="image" size={26} color={colors.shell} />}
+      </View>
+      <SecondaryButton label={label} icon="upload" onPress={onUpload} style={styles.logoUploadButton} />
     </View>
   );
 }
@@ -823,7 +834,7 @@ function ColorPickerRow({ label, color, onSelect }: { label: string; color: stri
   const [open, setOpen] = useState(false);
   return (
     <View>
-      <Pressable style={styles.colorRow} onPress={() => setOpen((v) => !v)}>
+      <Pressable accessibilityRole="button" style={styles.colorRow} onPress={() => setOpen((v) => !v)}>
         <Text style={[textStyles.bodyMedium, styles.colorRowLabel]}>{label}</Text>
         <View style={[styles.colorSwatch, { backgroundColor: color }]} />
       </Pressable>
@@ -832,7 +843,9 @@ function ColorPickerRow({ label, color, onSelect }: { label: string; color: stri
           {QUICK_COLORS.map((c) => (
             <Pressable
               key={c}
-              style={[styles.colorOption, { backgroundColor: c }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Select color ${c}`}
+              style={[styles.colorOption, { backgroundColor: c }, color === c && styles.colorOptionSelected]}
               onPress={() => {
                 onSelect(c);
                 setOpen(false);
@@ -845,131 +858,97 @@ function ColorPickerRow({ label, color, onSelect }: { label: string; color: stri
   );
 }
 
-function LabeledInput({
-  label,
-  value,
-  onChangeText,
-  ...rest
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-} & React.ComponentProps<typeof TextInput>) {
-  return (
-    <View style={styles.labeledInput}>
-      <Text style={styles.inputLabel}>{label}</Text>
-      <TextInput style={styles.input} value={value} onChangeText={onChangeText} {...rest} />
-    </View>
-  );
-}
-
 function InfoModal({ visible, onClose, title, body, noteTitle, note }: { visible: boolean; onClose: () => void; title: string; body: string; noteTitle: string; note: string }) {
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={[styles.modalCard, shadows.card]}>
-          <Text style={textStyles.heading3}>{title}</Text>
-          <Text style={[textStyles.bodyMedium, styles.infoModalBody]}>{body}</Text>
-          <View style={[styles.infoNoteBox, shadows.card]}>
-            <Text style={styles.infoNoteTitle}>ℹ️ {noteTitle}</Text>
-            <Text style={styles.infoNoteText}>{note}</Text>
-          </View>
-          <Pressable style={styles.modalCloseButton} onPress={onClose}>
-            <Text style={textStyles.buttonText}>Close</Text>
-          </Pressable>
+    <AppModal
+      visible={visible}
+      title={title}
+      onClose={onClose}
+      footer={<PrimaryButton label="Close" onPress={onClose} />}
+    >
+      <Text style={[textStyles.bodyMedium, styles.infoModalBody]}>{body}</Text>
+      <View style={styles.infoNoteBox}>
+        <View style={styles.infoNoteHeader}>
+          <AppIcon name="info" size={18} color={colors.active} />
+          <Text style={styles.infoNoteTitle}>{noteTitle}</Text>
         </View>
+        <Text style={styles.infoNoteText}>{note}</Text>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.large,
-    paddingVertical: spacing.medium,
+  container: { flex: 1, backgroundColor: colors.canvas },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.canvas },
+  content: { padding: spacing.medium, paddingBottom: spacing.large, gap: spacing.small },
+  footer: {
+    backgroundColor: colors.surface,
+    borderTopColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    padding: spacing.medium,
   },
-  headerSaveText: { color: colors.white, fontWeight: 'bold', fontSize: 16 },
-  content: { padding: spacing.large, paddingBottom: spacing.xLarge },
-  brandCard: { flexDirection: 'row', alignItems: 'center', borderRadius: radii.cardRadius, padding: spacing.large, marginBottom: spacing.large },
-  brandLogo: { width: 70, height: 70, borderRadius: radii.cardRadius, borderWidth: 2, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  brandCard: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.small },
+  brandLogo: { width: 64, height: 64, borderRadius: radii.cardRadius, borderWidth: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   brandLogoImage: { width: '100%', height: '100%' },
-  brandLogoIcon: { fontSize: 32 },
-  brandTextBox: { flex: 1, marginLeft: spacing.large },
-  brandName: { fontSize: 17, fontWeight: 'bold' },
-  brandSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  brandAppName: { fontSize: 13, fontWeight: '600', marginTop: 2 },
-  brandColorSwatch: { width: 48, height: 48, borderRadius: radii.borderRadius, alignItems: 'center', justifyContent: 'center' },
-  brandColorIcon: { fontSize: 20 },
-  sectionHeader: { marginTop: spacing.large, marginBottom: spacing.medium, color: colors.primary },
-  card: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium },
-  cardLoading: { alignItems: 'center', paddingVertical: spacing.xLarge },
-  divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.small },
-  settingRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.small + 4 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.small + 4 },
-  settingIcon: { fontSize: 20, marginRight: spacing.medium, width: 28, textAlign: 'center' },
+  brandTextBox: { flex: 1, marginLeft: spacing.medium },
+  brandName: { ...textStyles.heading3, fontSize: 16 },
+  brandSubtitle: { ...textStyles.bodySmall, marginTop: 2 },
+  brandAppName: { ...textStyles.labelSmall, fontWeight: '600', marginTop: 2 },
+  brandColorSwatch: { width: 44, height: 44, borderRadius: radii.borderRadius, borderWidth: 1, borderColor: colors.border },
+  sectionHeader: { marginTop: spacing.medium, marginBottom: spacing.xs, color: colors.shell },
+  cardLoading: { alignItems: 'center', paddingVertical: spacing.large },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.xs },
+  settingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.medium, paddingVertical: spacing.small + 4 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.medium, paddingVertical: spacing.small + 4 },
   settingTextBox: { flex: 1 },
-  settingTitle: { fontWeight: '600', fontSize: 14 },
-  settingSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  chevron: { fontSize: 22, color: colors.textSecondary },
-  subheading: { fontWeight: 'bold', fontSize: 15, marginBottom: spacing.small },
-  stepperRow: { marginBottom: spacing.medium },
+  settingTitle: { ...textStyles.label },
+  settingSubtitle: { ...textStyles.bodySmall, marginTop: 2 },
+  subheading: { ...textStyles.label, fontWeight: '700', marginBottom: spacing.xs, marginTop: spacing.xs },
+  stepperRow: { marginBottom: spacing.small },
   stepperLabel: { marginBottom: spacing.small },
   stepperControls: { flexDirection: 'row', alignItems: 'center', gap: spacing.medium },
-  stepperButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: `${colors.primary}1A`, alignItems: 'center', justifyContent: 'center' },
-  stepperButtonText: { fontSize: 20, color: colors.primary, fontWeight: 'bold' },
-  stepperValue: { fontWeight: 'bold', fontSize: 16, minWidth: 36, textAlign: 'center' },
-  frequencyRow: { marginVertical: spacing.small },
+  stepperButton: { width: 40, height: 40, borderRadius: radii.borderRadius, backgroundColor: colors.activeMuted, alignItems: 'center', justifyContent: 'center' },
+  stepperValue: { ...textStyles.heading3, minWidth: 36, textAlign: 'center' },
+  frequencyRow: { marginVertical: spacing.xs },
   frequencyLabel: { marginBottom: spacing.small },
-  frequencyChipRow: { flexDirection: 'row', gap: spacing.small },
-  frequencyChip: { borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: 6 },
-  frequencyChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  frequencyChipText: { fontSize: 12, color: colors.textSecondary },
-  frequencyChipTextSelected: { color: colors.white, fontWeight: '600' },
-  nestedSection: { paddingLeft: spacing.large + 16, paddingRight: spacing.small },
-  fullWidthButton: { backgroundColor: colors.primary, borderRadius: radii.buttonRadius, paddingVertical: spacing.medium, alignItems: 'center', marginTop: spacing.medium },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: spacing.large },
-  modalCard: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.large, width: '100%', maxWidth: 480, maxHeight: '85%' },
-  permissionsModalCard: { maxWidth: 700 },
-  logoUploadRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.medium, marginBottom: spacing.large },
-  logoPreview: { width: 56, height: 56, borderRadius: 28, backgroundColor: `${colors.primary}1A`, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  uploadLinkText: { color: colors.primary, fontWeight: '600' },
-  labeledInput: { marginBottom: spacing.medium },
-  inputLabel: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
-  input: { borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small + 4, backgroundColor: colors.background },
-  modalActionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.medium, marginTop: spacing.large },
-  secondaryButton: { borderWidth: 1, borderColor: colors.divider, borderRadius: radii.buttonRadius, paddingHorizontal: spacing.large, paddingVertical: spacing.small + 4 },
-  secondaryButtonText: { color: colors.textSecondary, fontWeight: '600' },
-  modalCloseButton: { backgroundColor: colors.primary, borderRadius: radii.buttonRadius, paddingHorizontal: spacing.large, paddingVertical: spacing.small + 4, alignItems: 'center', minWidth: 80 },
-  themeColorsLabel: { fontWeight: 'bold', marginBottom: spacing.small },
-  colorRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, padding: spacing.medium, marginBottom: spacing.small },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small },
+  chip: { borderWidth: 1, borderColor: colors.border, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: 6, backgroundColor: colors.surface },
+  chipSelected: { backgroundColor: colors.activeMuted, borderColor: colors.active },
+  chipText: { ...textStyles.bodySmall, color: colors.contentSecondary },
+  chipTextSelected: { color: colors.shell, fontWeight: '600' },
+  nestedSection: { paddingLeft: spacing.large + 12, paddingRight: spacing.small },
+  fullWidthButton: { marginTop: spacing.medium },
+  modalScroll: { maxHeight: 460 },
+  modalScrollContent: { gap: spacing.medium },
+  modalActionsRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.small },
+  modalActionButton: { minWidth: 110 },
+  logoUploadRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.medium },
+  logoPreview: { width: 56, height: 56, borderRadius: radii.borderRadius, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  logoUploadButton: { flex: 1 },
+  themeColorsLabel: { fontWeight: '700', marginTop: spacing.small },
+  colorRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: colors.border, borderRadius: radii.borderRadius, padding: spacing.medium },
   colorRowLabel: { fontWeight: '500' },
-  colorSwatch: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, borderColor: colors.divider },
-  colorOptionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small, marginBottom: spacing.medium },
-  colorOption: { width: 36, height: 36, borderRadius: 8, borderWidth: 1, borderColor: colors.divider },
-  roleLabel: { marginBottom: spacing.small },
-  roleChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small, marginBottom: spacing.medium },
-  roleChip: { borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: 6 },
-  roleChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  roleChipText: { fontSize: 12, color: colors.textSecondary },
-  roleChipTextSelected: { color: colors.white, fontWeight: '600' },
-  permissionsIntro: { marginVertical: spacing.medium },
-  permissionsHeaderRow: { flexDirection: 'row', backgroundColor: colors.divider, paddingVertical: spacing.small },
-  permissionsHeaderCell: { fontWeight: 'bold', fontSize: 12, textAlign: 'center' },
+  colorSwatch: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, borderColor: colors.border },
+  colorOptionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small, marginTop: spacing.small },
+  colorOption: { width: 36, height: 36, borderRadius: 8, borderWidth: 1, borderColor: colors.border },
+  colorOptionSelected: { borderWidth: 2, borderColor: colors.shell },
+  roleLabel: { marginTop: spacing.xs },
+  roleChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small },
+  permissionsIntro: { marginBottom: spacing.medium },
+  permissionsHeaderRow: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, borderRadius: radii.borderRadius, paddingVertical: spacing.small },
+  permissionsHeaderCell: { ...textStyles.labelSmall, color: colors.contentPrimary, fontWeight: '700', textAlign: 'center' },
   permissionsNameCol: { width: 160, paddingHorizontal: spacing.small, textAlign: 'left' },
-  permissionsRoleCol: { width: 90, alignItems: 'center', justifyContent: 'center' },
+  permissionsRoleCol: { width: 88, alignItems: 'center', justifyContent: 'center' },
   permissionsBody: { maxHeight: 320 },
-  permissionsRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.small + 4, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  checkboxGlyph: { fontSize: 18, color: colors.primary },
-  infoModalBody: { marginVertical: spacing.medium, lineHeight: 20 },
-  infoNoteBox: { backgroundColor: `${colors.info}14`, borderRadius: radii.cardRadius, padding: spacing.medium },
-  infoNoteTitle: { fontWeight: 'bold', color: colors.info, marginBottom: spacing.small },
-  infoNoteText: { color: colors.info, fontSize: 13 },
-  backupModalCard: { alignItems: 'center', maxWidth: 320 },
-  backupMessageText: { marginTop: spacing.medium, textAlign: 'center' },
+  permissionsRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.small + 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  permissionBox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+  permissionBoxChecked: { backgroundColor: colors.active, borderColor: colors.active },
+  infoModalBody: { marginBottom: spacing.medium, lineHeight: 20 },
+  infoNoteBox: { backgroundColor: colors.activeMuted, borderRadius: radii.borderRadius, borderWidth: 1, borderColor: colors.active, padding: spacing.medium },
+  infoNoteHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, marginBottom: spacing.xs },
+  infoNoteTitle: { ...textStyles.label, color: colors.active, fontWeight: '700' },
+  infoNoteText: { ...textStyles.bodySmall, color: colors.contentSecondary },
+  backupBody: { alignItems: 'center', gap: spacing.medium, paddingVertical: spacing.small },
+  backupMessageText: { textAlign: 'center' },
 });

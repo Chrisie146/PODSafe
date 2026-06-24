@@ -36,6 +36,7 @@ export type AppIconName =
   | 'map'
   | 'menu'
   | 'message'
+  | 'minus'
   | 'more'
   | 'package'
   | 'phone'
@@ -270,6 +271,8 @@ function glyph(name: AppIconName): ReactNode {
           <Line x1="7" y1="14" x2="13" y2="14" />
         </>
       );
+    case 'minus':
+      return <Line x1="5" y1="12" x2="19" y2="12" />;
     case 'more':
       return (
         <>
