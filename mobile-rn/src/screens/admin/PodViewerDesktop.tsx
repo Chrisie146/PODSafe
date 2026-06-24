@@ -252,7 +252,7 @@ export default function PodViewerDesktop({ navigation }: { navigation: { navigat
     <View style={styles.container}>
       <View style={styles.headerBar}>
         <View style={styles.headerBarLeft}>
-          <Text style={textStyles.heading3}>Proof of Deliveries</Text>
+          <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Proof of Deliveries</Text>
           <Text style={styles.desktopBadge}>Desktop</Text>
         </View>
         <View style={styles.headerBarRight}>

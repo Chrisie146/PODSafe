@@ -223,7 +223,7 @@ export default function ItemCatalogDesktop({ navigation }: { navigation: { navig
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <Text style={textStyles.heading3}>Item Catalog Management</Text>
+        <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Item Catalog Management</Text>
         <View style={styles.headerBarRight}>
           <Pressable onPress={() => setShowFilters((p) => !p)}>
             <Text style={styles.headerBarAction}>🔍</Text>

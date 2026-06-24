@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Pressable, StyleSheet, Text } from 'react-native';
+import { Alert, View } from 'react-native';
 import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 import Dashboard from '../screens/driver/Dashboard';
 import DeliveryList from '../screens/driver/DeliveryList';
@@ -10,16 +10,11 @@ import Chat from '../screens/driver/Chat';
 import MyClaims from '../screens/driver/MyClaims';
 import ClaimDetails from '../screens/driver/ClaimDetails';
 import ReportIssue from '../screens/driver/ReportIssue';
+import { IconButton } from '../components/ui/Buttons';
 import { useAuthStore } from '../stores/useAuthStore';
 import { colors } from '../theme/tokens';
+import { textStyles } from '../theme/textStyles';
 
-/**
- * Navigation wiring for the 9 lib/screens/driver/*.dart screens ported in Phase 2.
- * Replaces dashboard_screen.dart's AppBar actions (chat/logout) + TabBar (Deliveries/
- * Claims) and delivery_list_screen.dart's "View All" links with plain stack navigation —
- * see Dashboard.tsx's class-level comment for what's intentionally not reproduced
- * (map toggle, swipe gestures, bottom-sheet quick actions).
- */
 export type DriverStackParamList = {
   Dashboard: undefined;
   DeliveryList: undefined;
@@ -47,17 +42,11 @@ function DashboardHeaderActions({ navigation }: { navigation: DashboardScreenPro
   };
 
   return (
-    <>
-      <Pressable onPress={() => navigation.navigate('Chat')} style={styles.headerAction}>
-        <Text style={styles.headerActionIcon}>💬</Text>
-      </Pressable>
-      <Pressable onPress={() => navigation.navigate('MyClaims')} style={styles.headerAction}>
-        <Text style={styles.headerActionIcon}>📋</Text>
-      </Pressable>
-      <Pressable onPress={handleLogout}>
-        <Text style={styles.headerActionIcon}>⎋</Text>
-      </Pressable>
-    </>
+    <View style={styles.actions}>
+      <IconButton icon="message" color={colors.onPrimary} accessibilityLabel="Chat with admin" onPress={() => navigation.navigate('Chat')} />
+      <IconButton icon="clipboard" color={colors.onPrimary} accessibilityLabel="View my claims" onPress={() => navigation.navigate('MyClaims')} />
+      <IconButton icon="logout" color={colors.onPrimary} accessibilityLabel="Sign out" onPress={handleLogout} />
+    </View>
   );
 }
 
@@ -81,7 +70,11 @@ export default function DriverStack() {
   return (
     <Stack.Navigator
       initialRouteName="Dashboard"
-      screenOptions={{ headerTintColor: colors.white, headerStyle: { backgroundColor: colors.primary } }}
+      screenOptions={{
+        headerTintColor: colors.onPrimary,
+        headerStyle: { backgroundColor: colors.shell },
+        headerTitleStyle: { ...textStyles.label, color: colors.onPrimary },
+      }}
     >
       <Stack.Screen name="Dashboard" component={DashboardScreenWrapper} options={{ title: 'PODSafe Driver' }} />
 
@@ -102,7 +95,6 @@ export default function DriverStack() {
   );
 }
 
-const styles = StyleSheet.create({
-  headerAction: { marginRight: 12 },
-  headerActionIcon: { fontSize: 20 },
-});
+const styles = {
+  actions: { flexDirection: 'row' as const },
+};

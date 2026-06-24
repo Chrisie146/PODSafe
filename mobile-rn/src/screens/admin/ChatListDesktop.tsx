@@ -88,7 +88,7 @@ export default function ChatListDesktop() {
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <Text style={textStyles.heading3}>💬 Messages</Text>
+        <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>💬 Messages</Text>
         <Pressable style={styles.headerBarAction} onPress={() => setShowDriverPicker(true)}>
           <Text style={styles.headerBarActionText}>+ New</Text>
         </Pressable>

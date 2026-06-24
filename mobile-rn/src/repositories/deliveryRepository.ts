@@ -1,6 +1,11 @@
-import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import firestore, {
+  FirebaseFirestoreTypes,
+} from '@react-native-firebase/firestore';
 import { Delivery, DeliveryStatus } from '../models/delivery';
-import { deliveryFromFirestore, deliveryToFirestore } from '../models/delivery.converters';
+import {
+  deliveryFromFirestore,
+  deliveryToFirestore,
+} from '../models/delivery.converters';
 import { normalizeRegistration } from '../utils/vehicleUtils';
 
 /**
@@ -20,7 +25,9 @@ import { normalizeRegistration } from '../utils/vehicleUtils';
  *   function (the RN/JS idiom) instead of Dart `Stream<List<Delivery>>` getters.
  */
 export class DeliveryRepository {
-  constructor(private firestoreInstance: FirebaseFirestoreTypes.Module = firestore()) {}
+  constructor(
+    private firestoreInstance: FirebaseFirestoreTypes.Module = firestore(),
+  ) {}
 
   /** Mirrors getDeliveriesForDriver(). Returns an unsubscribe function. */
   subscribeToDeliveriesForDriver(
@@ -33,8 +40,8 @@ export class DeliveryRepository {
       .where('driverId', '==', driverId)
       .orderBy('scheduledDate', 'desc')
       .onSnapshot(
-        (snapshot) => onChange(snapshot.docs.map(deliveryFromFirestore)),
-        (error) => onError?.(error as unknown as Error),
+        snapshot => onChange(snapshot.docs.map(deliveryFromFirestore)),
+        error => onError?.(error as unknown as Error),
       );
   }
 
@@ -49,7 +56,11 @@ export class DeliveryRepository {
     onChange: (deliveries: Delivery[]) => void,
     onError?: (error: Error) => void,
   ): () => void {
-    const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const startOfDay = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
     const endOfDay = new Date(startOfDay);
     endOfDay.setDate(endOfDay.getDate() + 1);
 
@@ -62,16 +73,16 @@ export class DeliveryRepository {
       .where('scheduledDate', '<', firestore.Timestamp.fromDate(endOfDay))
       .orderBy('scheduledDate')
       .onSnapshot(
-        (snapshot) => onChange(snapshot.docs.map(deliveryFromFirestore)),
-        (error) => {
+        snapshot => onChange(snapshot.docs.map(deliveryFromFirestore)),
+        error => {
           const message = String(error);
           if (message.includes('index')) {
             fallbackUnsubscribe = this.subscribeToDeliveriesForDriver(
               driverId,
-              (allDeliveries) =>
+              allDeliveries =>
                 onChange(
                   allDeliveries.filter(
-                    (d) =>
+                    d =>
                       d.scheduledDate.getFullYear() === date.getFullYear() &&
                       d.scheduledDate.getMonth() === date.getMonth() &&
                       d.scheduledDate.getDate() === date.getDate(),
@@ -103,26 +114,83 @@ export class DeliveryRepository {
     companyId: string,
     onChange: (deliveries: Delivery[]) => void,
     onError?: (error: Error) => void,
-    filters?: { status?: DeliveryStatus; orderByScheduledDate?: boolean; limit?: number },
+    filters?: {
+      status?: DeliveryStatus;
+      orderByScheduledDate?: boolean;
+      limit?: number;
+    },
   ): () => void {
-    let query: FirebaseFirestoreTypes.Query = this.firestoreInstance.collection('deliveries').where('companyId', '==', companyId);
+    let query: FirebaseFirestoreTypes.Query = this.firestoreInstance
+      .collection('deliveries')
+      .where('companyId', '==', companyId);
     if (filters?.status) {
       query = query.where('status', '==', filters.status);
     }
-    query = query.orderBy(filters?.orderByScheduledDate ? 'scheduledDate' : 'createdAt', 'desc');
+    query = query.orderBy(
+      filters?.orderByScheduledDate ? 'scheduledDate' : 'createdAt',
+      'desc',
+    );
     if (filters?.limit) {
       query = query.limit(filters.limit);
     }
 
-    return query.onSnapshot(
-      (snapshot) => onChange(snapshot.docs.map(deliveryFromFirestore)),
-      (error) => onError?.(error as unknown as Error),
+    let fallbackUnsubscribe: (() => void) | null = null;
+    const unsubscribe = query.onSnapshot(
+      snapshot => onChange(snapshot.docs.map(deliveryFromFirestore)),
+      error => {
+        const errorCode = (error as unknown as { code?: string }).code;
+        const needsIndexFallback =
+          errorCode === 'failed-precondition' ||
+          String(error).toLowerCase().includes('index');
+        if (!needsIndexFallback) {
+          onError?.(error as unknown as Error);
+          return;
+        }
+
+        // A missing compound index must not blank the operational queue. Keep the
+        // company boundary on the server, then apply the optional tab/sort locally.
+        fallbackUnsubscribe = this.firestoreInstance
+          .collection('deliveries')
+          .where('companyId', '==', companyId)
+          .onSnapshot(
+            snapshot => {
+              let deliveries = snapshot.docs.map(deliveryFromFirestore);
+              if (filters?.status)
+                deliveries = deliveries.filter(
+                  delivery => delivery.status === filters.status,
+                );
+              deliveries.sort((left, right) => {
+                const leftDate = filters?.orderByScheduledDate
+                  ? left.scheduledDate
+                  : left.createdAt;
+                const rightDate = filters?.orderByScheduledDate
+                  ? right.scheduledDate
+                  : right.createdAt;
+                return rightDate.getTime() - leftDate.getTime();
+              });
+              onChange(
+                filters?.limit
+                  ? deliveries.slice(0, filters.limit)
+                  : deliveries,
+              );
+            },
+            fallbackError => onError?.(fallbackError as unknown as Error),
+          );
+      },
     );
+
+    return () => {
+      unsubscribe();
+      fallbackUnsubscribe?.();
+    };
   }
 
   async getDeliveryById(deliveryId: string): Promise<Delivery | null> {
     try {
-      const doc = await this.firestoreInstance.collection('deliveries').doc(deliveryId).get();
+      const doc = await this.firestoreInstance
+        .collection('deliveries')
+        .doc(deliveryId)
+        .get();
       return doc.exists() ? deliveryFromFirestore(doc) : null;
     } catch {
       return null;
@@ -131,7 +199,9 @@ export class DeliveryRepository {
 
   async createDelivery(delivery: Delivery): Promise<string> {
     try {
-      const ref = await this.firestoreInstance.collection('deliveries').add(deliveryToFirestore(delivery));
+      const ref = await this.firestoreInstance
+        .collection('deliveries')
+        .add(deliveryToFirestore(delivery));
       return ref.id;
     } catch {
       throw new Error('Failed to create delivery');
@@ -154,21 +224,35 @@ export class DeliveryRepository {
 
   /** Mirrors bulk_upload_screen.dart's `_loadExistingInvoices` duplicate-detection lookup. */
   async getExistingInvoiceNumbers(companyId: string): Promise<string[]> {
-    const snapshot = await this.firestoreInstance.collection('deliveries').where('companyId', '==', companyId).get();
-    return snapshot.docs.map((doc) => doc.data().invoiceNumber as string | undefined).filter((value): value is string => Boolean(value));
+    const snapshot = await this.firestoreInstance
+      .collection('deliveries')
+      .where('companyId', '==', companyId)
+      .get();
+    return snapshot.docs
+      .map(doc => doc.data().invoiceNumber as string | undefined)
+      .filter((value): value is string => Boolean(value));
   }
 
   async updateDelivery(delivery: Delivery): Promise<void> {
     try {
-      await this.firestoreInstance.collection('deliveries').doc(delivery.id).update(deliveryToFirestore(delivery));
+      await this.firestoreInstance
+        .collection('deliveries')
+        .doc(delivery.id)
+        .update(deliveryToFirestore(delivery));
     } catch {
       throw new Error('Failed to update delivery');
     }
   }
 
-  async updateDeliveryStatus(deliveryId: string, status: DeliveryStatus): Promise<void> {
+  async updateDeliveryStatus(
+    deliveryId: string,
+    status: DeliveryStatus,
+  ): Promise<void> {
     try {
-      const deliveryDoc = await this.firestoreInstance.collection('deliveries').doc(deliveryId).get();
+      const deliveryDoc = await this.firestoreInstance
+        .collection('deliveries')
+        .doc(deliveryId)
+        .get();
       if (!deliveryDoc.exists()) {
         throw new Error('Delivery not found');
       }
@@ -179,10 +263,20 @@ export class DeliveryRepository {
         updateData.deliveredAt = firestore.FieldValue.serverTimestamp();
       }
 
-      await this.firestoreInstance.collection('deliveries').doc(deliveryId).update(updateData);
+      await this.firestoreInstance
+        .collection('deliveries')
+        .doc(deliveryId)
+        .update(updateData);
 
-      if (delivery.status !== 'delivered' && status === 'delivered' && delivery.vehicleUsed) {
-        await this.incrementVehicleDeliveryCount(delivery.companyId, delivery.vehicleUsed);
+      if (
+        delivery.status !== 'delivered' &&
+        status === 'delivered' &&
+        delivery.vehicleUsed
+      ) {
+        await this.incrementVehicleDeliveryCount(
+          delivery.companyId,
+          delivery.vehicleUsed,
+        );
       }
 
       // NOTE: Flutter's _notifyAdminsOfStatusChange() is intentionally not ported here.
@@ -194,20 +288,29 @@ export class DeliveryRepository {
 
   async linkPODToDelivery(deliveryId: string, podId: string): Promise<void> {
     try {
-      const deliveryDoc = await this.firestoreInstance.collection('deliveries').doc(deliveryId).get();
+      const deliveryDoc = await this.firestoreInstance
+        .collection('deliveries')
+        .doc(deliveryId)
+        .get();
       if (!deliveryDoc.exists()) {
         throw new Error('Delivery not found');
       }
       const delivery = deliveryFromFirestore(deliveryDoc);
 
-      await this.firestoreInstance.collection('deliveries').doc(deliveryId).update({
-        podId,
-        status: 'delivered',
-        deliveredAt: firestore.FieldValue.serverTimestamp(),
-      });
+      await this.firestoreInstance
+        .collection('deliveries')
+        .doc(deliveryId)
+        .update({
+          podId,
+          status: 'delivered',
+          deliveredAt: firestore.FieldValue.serverTimestamp(),
+        });
 
       if (delivery.status !== 'delivered' && delivery.vehicleUsed) {
-        await this.incrementVehicleDeliveryCount(delivery.companyId, delivery.vehicleUsed);
+        await this.incrementVehicleDeliveryCount(
+          delivery.companyId,
+          delivery.vehicleUsed,
+        );
       }
 
       // NOTE: Flutter's _notifyAdminsOfStatusChange() is intentionally not ported here.
@@ -219,7 +322,10 @@ export class DeliveryRepository {
 
   async deleteDelivery(deliveryId: string): Promise<void> {
     try {
-      await this.firestoreInstance.collection('deliveries').doc(deliveryId).delete();
+      await this.firestoreInstance
+        .collection('deliveries')
+        .doc(deliveryId)
+        .delete();
     } catch {
       throw new Error('Failed to delete delivery');
     }
@@ -235,10 +341,18 @@ export class DeliveryRepository {
         .where('companyId', '==', companyId);
 
       if (options?.startDate) {
-        query = query.where('createdAt', '>=', firestore.Timestamp.fromDate(options.startDate));
+        query = query.where(
+          'createdAt',
+          '>=',
+          firestore.Timestamp.fromDate(options.startDate),
+        );
       }
       if (options?.endDate) {
-        query = query.where('createdAt', '<=', firestore.Timestamp.fromDate(options.endDate));
+        query = query.where(
+          'createdAt',
+          '<=',
+          firestore.Timestamp.fromDate(options.endDate),
+        );
       }
 
       const snapshot = await query.get();
@@ -251,7 +365,7 @@ export class DeliveryRepository {
         failed: 0,
       };
 
-      snapshot.docs.forEach((doc) => {
+      snapshot.docs.forEach(doc => {
         const delivery = deliveryFromFirestore(doc);
         stats.total += 1;
         stats[delivery.status] = (stats[delivery.status] ?? 0) + 1;
@@ -263,7 +377,10 @@ export class DeliveryRepository {
     }
   }
 
-  async searchDeliveries(companyId: string, searchTerm: string): Promise<Delivery[]> {
+  async searchDeliveries(
+    companyId: string,
+    searchTerm: string,
+  ): Promise<Delivery[]> {
     try {
       const snapshot = await this.firestoreInstance
         .collection('deliveries')
@@ -271,19 +388,24 @@ export class DeliveryRepository {
         .get();
 
       const term = searchTerm.toLowerCase();
-      return snapshot.docs.map(deliveryFromFirestore).filter(
-        (delivery) =>
-          delivery.customerName.toLowerCase().includes(term) ||
-          delivery.invoiceNumber.toLowerCase().includes(term) ||
-          delivery.customerAddress.toLowerCase().includes(term),
-      );
+      return snapshot.docs
+        .map(deliveryFromFirestore)
+        .filter(
+          delivery =>
+            delivery.customerName.toLowerCase().includes(term) ||
+            delivery.invoiceNumber.toLowerCase().includes(term) ||
+            delivery.customerAddress.toLowerCase().includes(term),
+        );
     } catch {
       return [];
     }
   }
 
   /** Mirrors the vehicle totalDeliveries increment side effect in delivery_service.dart. */
-  private async incrementVehicleDeliveryCount(companyId: string, vehicleUsed: string): Promise<void> {
+  private async incrementVehicleDeliveryCount(
+    companyId: string,
+    vehicleUsed: string,
+  ): Promise<void> {
     try {
       const vehicleQuery = await this.firestoreInstance
         .collection('companies')

@@ -90,7 +90,6 @@ export default function AdminSettings({ navigation }: AdminSettingsProps) {
   const accentColor = useThemeStore((s) => s.accentColor);
   const warningColor = useThemeStore((s) => s.warningColor);
   const successColor = useThemeStore((s) => s.successColor);
-  const useDarkMode = useThemeStore((s) => s.useDarkMode);
   const loadBrandingSettings = useThemeStore((s) => s.loadBrandingSettings);
   const saveBrandingSettings = useThemeStore((s) => s.saveBrandingSettings);
   const setAppName = useThemeStore((s) => s.setAppName);
@@ -99,7 +98,6 @@ export default function AdminSettings({ navigation }: AdminSettingsProps) {
   const setAccentColor = useThemeStore((s) => s.setAccentColor);
   const setWarningColor = useThemeStore((s) => s.setWarningColor);
   const setSuccessColor = useThemeStore((s) => s.setSuccessColor);
-  const setDarkMode = useThemeStore((s) => s.setDarkMode);
 
   const [isLoadingDriverSettings, setIsLoadingDriverSettings] = useState(true);
   const [isLoadingCompanyInfo, setIsLoadingCompanyInfo] = useState(true);
@@ -413,7 +411,7 @@ export default function AdminSettings({ navigation }: AdminSettingsProps) {
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <Text style={textStyles.heading2}>⚙️ Settings</Text>
+        <Text style={[textStyles.heading2, { color: colors.onPrimary }]}>⚙️ Settings</Text>
         {isSaving ? (
           <ActivityIndicator color={colors.white} />
         ) : (
@@ -623,7 +621,6 @@ export default function AdminSettings({ navigation }: AdminSettingsProps) {
             <ColorPickerRow label="Accent Color" color={accentColor} onSelect={setAccentColor} />
             <ColorPickerRow label="Warning Color" color={warningColor} onSelect={setWarningColor} />
             <ColorPickerRow label="Success Color" color={successColor} onSelect={setSuccessColor} />
-            <SwitchRow label="Dark Mode" subtitle="Enable dark theme for the application" value={useDarkMode} onChange={setDarkMode} icon="🌙" />
             <View style={styles.modalActionsRow}>
               <Pressable style={styles.secondaryButton} onPress={() => setShowBrandingTheme(false)}>
                 <Text style={styles.secondaryButtonText}>Cancel</Text>

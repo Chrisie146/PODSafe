@@ -306,7 +306,7 @@ export default function VehicleManagementDesktop() {
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <Text style={textStyles.heading3}>Vehicle Management</Text>
+        <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Vehicle Management</Text>
         <Text style={styles.desktopBadge}>Desktop</Text>
         <View style={styles.headerBarRight}>
           <Pressable onPress={() => setIsMultiSelectMode((p) => !p)}>

@@ -9,6 +9,11 @@
  * New code should prefer the semantic aliases (shell/canvas/surface/border/focus/...).
  */
 export const colors = {
+  activeMuted: '#E7F2FF',
+  verifiedMuted: '#E5F7EF',
+  attentionMuted: '#FFF4D6',
+  criticalMuted: '#FDE8E7',
+  disabledContent: '#74777F',
   // --- Semantic palette (preferred for new code) ---
   shell: '#0B1F3A', // app shell / primary action — sidebar, principal buttons, strong headings
   canvas: '#FAF9F5', // working canvas — main app background

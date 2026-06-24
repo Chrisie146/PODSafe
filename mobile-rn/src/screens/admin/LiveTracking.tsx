@@ -245,7 +245,7 @@ export default function LiveTracking() {
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <Text style={textStyles.heading2}>📍 Live Tracking</Text>
+        <Text style={[textStyles.heading2, { color: colors.onPrimary }]}>📍 Live Tracking</Text>
         <View style={styles.headerActions}>
           <Pressable style={styles.dateChip} onPress={openDateModal}>
             <Text style={styles.dateChipText}>

@@ -1,36 +1,40 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useAuthStore } from '../../stores/useAuthStore';
-import { hasAnyPermission, hasPermission } from '../../permissions/permissionService';
-import { DeliveryRepository } from '../../repositories/deliveryRepository';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { AdminToolbar } from '../../components/admin/AdminPrimitives';
+import { AdminShell } from '../../components/admin/AdminShell';
+import {
+  AppIcon,
+  AppIconName,
+  AppModal,
+  Card,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  LoadingState,
+  PrimaryButton,
+  SearchField,
+  SecondaryButton,
+  StatusChip,
+} from '../../components/ui';
 import { Delivery, DeliveryStatus } from '../../models/delivery';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import {
+  hasAnyPermission,
+  hasPermission,
+} from '../../permissions/permissionService';
+import { DeliveryRepository } from '../../repositories/deliveryRepository';
+import { useAuthStore } from '../../stores/useAuthStore';
+import { colors, spacing } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
-/**
- * Ported from the MOBILE layout of lib/screens/admin/delivery_management_screen.dart
- * (`DeliveryManagementMobile`, verified against source on 2026-06-22) — 4-tab
- * (All/Pending/Active/Completed) delivery list with search, an export/bulk-upload menu,
- * and a permission-gated "New Delivery" FAB.
- *
- * Group A responsive-split screen — only the mobile path is ported this pass; the
- * >1000px desktop branch lands in Phase 4.
- *
- * Deviations from the Flutter source:
- * - Subscribes to all 4 tabs simultaneously via `DeliveryRepository` directly (extended
- *   this pass with optional `status`/`orderByScheduledDate` filters), matching Flutter's
- *   `TabBarView` eager-mount behavior — same precedent as DriverManagement.tsx.
- * - `PermissionBuilder`/`PermissionGuard` widgets become direct `hasPermission()`/
- *   `hasAnyPermission()` checks (no shared PermissionGuard RN component exists yet for
- *   this single use site — not worth building one until a second screen needs it).
- * - The export menu's "Download Template"/"Export All Deliveries" depend on
- *   `delivery_export_service.dart`, which the migration plan already flags as having a
- *   broken native stub deferred to Phase 6 — these stay honest "Coming Soon" alerts
- *   rather than a half-built implementation. "Bulk Upload CSV" still navigates to a
- *   `BulkUpload` route (not built yet either, but consistent with this phase's other
- *   forward-references like CreateDriver/PodDetails).
- * - Tab bar is a custom Pressable strip (house convention), not a tab-bar library.
- */
 const TABS: { key: DeliveryStatus | null; label: string }[] = [
   { key: null, label: 'All' },
   { key: 'pending', label: 'Pending' },
@@ -38,273 +42,571 @@ const TABS: { key: DeliveryStatus | null; label: string }[] = [
   { key: 'delivered', label: 'Completed' },
 ];
 
+type StatusTone = 'info' | 'warning' | 'success' | 'error';
+
+const STATUS: Record<
+  DeliveryStatus,
+  { icon: AppIconName; label: string; tone: StatusTone }
+> = {
+  pending: { icon: 'calendar', label: 'Pending', tone: 'warning' },
+  inTransit: { icon: 'truck', label: 'In transit', tone: 'info' },
+  delivered: { icon: 'check', label: 'Delivered', tone: 'success' },
+  failed: { icon: 'alert', label: 'Failed', tone: 'error' },
+};
+
 interface DeliveryManagementProps {
-  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void };
+  navigation: {
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+  };
 }
 
 const deliveryRepository = new DeliveryRepository();
 
-function statusColor(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return colors.warning;
-    case 'inTransit':
-      return colors.info;
-    case 'delivered':
-      return colors.success;
-    case 'failed':
-      return colors.error;
-  }
-}
-
-function statusIcon(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return '⏳';
-    case 'inTransit':
-      return '🚚';
-    case 'delivered':
-      return '✓';
-    case 'failed':
-      return '✕';
-  }
-}
-
-function statusLabel(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'Pending';
-    case 'inTransit':
-      return 'In Transit';
-    case 'delivered':
-      return 'Delivered';
-    case 'failed':
-      return 'Failed';
-  }
-}
-
-export default function DeliveryManagement({ navigation }: DeliveryManagementProps) {
-  const currentUser = useAuthStore((s) => s.currentUser);
-
+/** Responsive Wave A delivery operations workspace. */
+export default function DeliveryManagement({
+  navigation,
+}: DeliveryManagementProps) {
+  const currentUser = useAuthStore(state => state.currentUser);
+  const signOut = useAuthStore(state => state.signOut);
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1200;
   const [activeTab, setActiveTab] = useState<DeliveryStatus | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showMenu, setShowMenu] = useState(false);
-  const [deliveriesByTab, setDeliveriesByTab] = useState<Record<string, Delivery[] | null>>({
+  const [showActions, setShowActions] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [deliveriesByTab, setDeliveriesByTab] = useState<
+    Record<string, Delivery[] | null>
+  >({
     all: null,
     pending: null,
     inTransit: null,
     delivered: null,
   });
 
-  const canExport = hasAnyPermission(currentUser, ['deliveriesManage', 'financeExport']);
+  const canExport = hasAnyPermission(currentUser, [
+    'deliveriesManage',
+    'financeExport',
+  ]);
   const canCreate = hasPermission(currentUser, 'deliveriesManage');
 
-  useEffect(() => {
-    if (!currentUser) return;
+  const refresh = useCallback(() => {
+    setErrorMessage(null);
+    setIsRefreshing(true);
+    setRefreshKey(value => value + 1);
+  }, []);
 
+  useEffect(() => {
+    if (!currentUser) return undefined;
+    setErrorMessage(null);
     const unsubscribes = TABS.map(({ key }) =>
       deliveryRepository.subscribeToCompanyDeliveries(
         currentUser.companyId,
-        (deliveries) => setDeliveriesByTab((prev) => ({ ...prev, [key ?? 'all']: deliveries })),
-        () => setDeliveriesByTab((prev) => ({ ...prev, [key ?? 'all']: [] })),
+        deliveries => {
+          setDeliveriesByTab(previous => ({
+            ...previous,
+            [key ?? 'all']: deliveries,
+          }));
+          setIsRefreshing(false);
+        },
+        error => {
+          setErrorMessage(error.message || 'Deliveries could not be loaded.');
+          setIsRefreshing(false);
+        },
         { status: key ?? undefined, orderByScheduledDate: true },
       ),
     );
 
-    return () => unsubscribes.forEach((unsub) => unsub());
-  }, [currentUser]);
+    return () => unsubscribes.forEach(unsubscribe => unsubscribe());
+  }, [currentUser, refreshKey]);
 
   const activeDeliveries = deliveriesByTab[activeTab ?? 'all'];
-  const q = searchQuery.trim().toLowerCase();
-  const filteredDeliveries =
-    activeDeliveries?.filter(
-      (d) => q.length === 0 || d.customerName.toLowerCase().includes(q) || d.customerAddress.toLowerCase().includes(q) || d.invoiceNumber.toLowerCase().includes(q),
-    ) ?? null;
+  const filteredDeliveries = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    return (
+      activeDeliveries?.filter(delivery => {
+        if (!normalizedQuery) return true;
+        return [
+          delivery.customerName,
+          delivery.customerAddress,
+          delivery.invoiceNumber,
+          delivery.orderNumber ?? '',
+          delivery.customerNumber ?? '',
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedQuery);
+      }) ?? null
+    );
+  }, [activeDeliveries, searchQuery]);
 
-  const comingSoon = (label: string) => {
-    setShowMenu(false);
-    Alert.alert(label, 'Coming Soon');
+  const handleSignOut = () => {
+    Alert.alert('Sign out', 'Sign out of this administration workspace?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+    ]);
   };
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Text style={textStyles.heading2}>Delivery Management</Text>
-        {canExport ? (
-          <Pressable onPress={() => setShowMenu(true)}>
-            <Text style={styles.headerBarIcon}>⬇</Text>
-          </Pressable>
-        ) : null}
-      </View>
+  const announceComingSoon = (label: string) => {
+    setShowActions(false);
+    Alert.alert(label, 'This export option is not available yet.');
+  };
 
-      <View style={styles.tabStrip}>
-        {TABS.map((tab) => (
-          <Pressable key={tab.label} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => setActiveTab(tab.key)}>
-            <Text style={[styles.tabButtonText, activeTab === tab.key && styles.tabButtonTextActive]}>{tab.label}</Text>
-          </Pressable>
-        ))}
+  const heading = (
+    <View style={styles.heading}>
+      <View style={styles.headingCopy}>
+        <Text style={textStyles.heading2}>Delivery operations</Text>
+        <Text style={textStyles.bodyMedium}>
+          Search, review, and route the company delivery queue.
+        </Text>
       </View>
+      {canCreate ? (
+        <PrimaryButton
+          label="New delivery"
+          icon="plus"
+          onPress={() => navigation.navigate('CreateDelivery')}
+          style={styles.createButton}
+        />
+      ) : null}
+    </View>
+  );
 
-      <View style={styles.searchBox}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput style={styles.searchInput} placeholder="Search by customer name, address, or invoice..." value={searchQuery} onChangeText={setSearchQuery} />
-        {searchQuery.length > 0 ? (
-          <Pressable onPress={() => setSearchQuery('')}>
-            <Text style={styles.searchClear}>✕</Text>
-          </Pressable>
-        ) : null}
-      </View>
-
-      {filteredDeliveries === null ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
+  const filters = (
+    <AdminToolbar style={styles.filters}>
+      {!isDesktop ? (
+        <View style={styles.searchRow}>
+          <SearchField
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search customer, address, or invoice"
+            containerStyle={styles.search}
+          />
+          {searchQuery ? (
+            <IconButton
+              icon="close"
+              accessibilityLabel="Clear delivery search"
+              onPress={() => setSearchQuery('')}
+            />
+          ) : null}
         </View>
-      ) : filteredDeliveries.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={styles.emptyIcon}>🚚</Text>
-          <Text style={styles.emptyText}>
-            {searchQuery.length > 0 ? 'No matching deliveries' : activeTab === null ? 'No deliveries yet' : `No ${statusLabel(activeTab).toLowerCase()} deliveries`}
-          </Text>
-          {searchQuery.length === 0 ? <Text style={styles.emptyHint}>Tap + to create a new delivery</Text> : null}
-        </View>
-      ) : (
-        <FlatList
-          data={filteredDeliveries}
-          keyExtractor={(delivery) => delivery.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => <DeliveryCard delivery={item} onPress={() => navigation.navigate('DeliveryDetails', { deliveryId: item.id })} />}
+      ) : null}
+      <View accessibilityRole="tablist" style={styles.tabList}>
+        {TABS.map(tab => {
+          const selected = activeTab === tab.key;
+          return (
+            <Pressable
+              key={tab.label}
+              accessibilityRole="button"
+              accessibilityLabel={`${tab.label} deliveries`}
+              accessibilityState={{ selected }}
+              onPress={() => setActiveTab(tab.key)}
+              style={({ pressed }) => [
+                styles.tab,
+                selected && styles.tabSelected,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                style={[styles.tabLabel, selected && styles.tabLabelSelected]}
+              >
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {canExport ? (
+        <SecondaryButton
+          label="Delivery actions"
+          icon="more"
+          onPress={() => setShowActions(true)}
+          style={styles.actionsButton}
+        />
+      ) : null}
+    </AdminToolbar>
+  );
+
+  const content = errorMessage ? (
+    <ErrorState
+      title="Deliveries need attention"
+      message={errorMessage}
+      onAction={refresh}
+    />
+  ) : filteredDeliveries === null ? (
+    <LoadingState
+      title="Loading deliveries"
+      message="Retrieving the latest delivery queue."
+    />
+  ) : filteredDeliveries.length === 0 ? (
+    <EmptyState
+      title={
+        searchQuery
+          ? 'No matching deliveries'
+          : activeTab
+          ? `No ${STATUS[activeTab].label.toLowerCase()} deliveries`
+          : 'No deliveries yet'
+      }
+      message={
+        searchQuery
+          ? 'Try a different customer, address, or invoice number.'
+          : 'Create a delivery to begin planning the next route.'
+      }
+      icon={searchQuery ? 'search' : 'truck'}
+      actionLabel={
+        searchQuery ? 'Clear search' : canCreate ? 'New delivery' : undefined
+      }
+      onAction={
+        searchQuery
+          ? () => setSearchQuery('')
+          : canCreate
+          ? () => navigation.navigate('CreateDelivery')
+          : undefined
+      }
+    />
+  ) : (
+    <FlatList
+      data={filteredDeliveries}
+      keyExtractor={delivery => delivery.id}
+      contentContainerStyle={styles.listContent}
+      ListHeaderComponent={isDesktop ? <DesktopTableHeader /> : null}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={refresh}
+          colors={[colors.active]}
+        />
+      }
+      renderItem={({ item }) => (
+        <DeliveryRow
+          delivery={item}
+          desktop={isDesktop}
+          onPress={() =>
+            navigation.navigate('DeliveryDetails', { deliveryId: item.id })
+          }
         />
       )}
+    />
+  );
 
-      {canCreate ? (
-        <Pressable style={styles.fab} onPress={() => navigation.navigate('CreateDelivery')}>
-          <Text style={styles.fabIcon}>＋</Text>
-          <Text style={styles.fabLabel}>New Delivery</Text>
-        </Pressable>
-      ) : null}
+  return (
+    <AdminShell
+      activeNav="deliveries"
+      title="Deliveries"
+      userName={currentUser?.fullName}
+      searchValue={searchQuery}
+      searchPlaceholder="Search deliveries"
+      onNavigate={screen => navigation.navigate(screen)}
+      onSearchChange={setSearchQuery}
+      onRefresh={refresh}
+      onLogout={handleSignOut}
+    >
+      <View style={styles.workspace}>
+        <View style={styles.page}>
+          {heading}
+          {filters}
+        </View>
+        {content}
+      </View>
+      <AppModal
+        visible={showActions}
+        title="Delivery actions"
+        onClose={() => setShowActions(false)}
+      >
+        <View style={styles.actionList}>
+          <SecondaryButton
+            label="Bulk upload CSV"
+            icon="upload"
+            onPress={() => {
+              setShowActions(false);
+              navigation.navigate('BulkUpload');
+            }}
+          />
+          <SecondaryButton
+            label="Download template"
+            icon="download"
+            onPress={() => announceComingSoon('Download template')}
+          />
+          <SecondaryButton
+            label="Export all deliveries"
+            icon="chart"
+            onPress={() => announceComingSoon('Export all deliveries')}
+          />
+        </View>
+      </AppModal>
+    </AdminShell>
+  );
+}
 
-      <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowMenu(false)}>
-          <View style={[styles.actionSheet, shadows.card]}>
-            <ActionRow label="Bulk Upload CSV" icon="📤" onPress={() => { setShowMenu(false); navigation.navigate('BulkUpload'); }} />
-            <ActionRow label="Download Template" icon="⬇" onPress={() => comingSoon('Download Template')} />
-            <ActionRow label="Export All Deliveries" icon="📊" onPress={() => comingSoon('Export All Deliveries')} />
-          </View>
-        </Pressable>
-      </Modal>
+function DesktopTableHeader() {
+  return (
+    <View style={styles.tableHeader}>
+      <Text style={[styles.tableHeading, styles.customerColumn]}>Customer</Text>
+      <Text style={[styles.tableHeading, styles.referenceColumn]}>
+        References
+      </Text>
+      <Text style={[styles.tableHeading, styles.scheduleColumn]}>
+        Scheduled
+      </Text>
+      <Text style={[styles.tableHeading, styles.statusColumn]}>Status</Text>
+      <View style={styles.chevronColumn} />
     </View>
   );
 }
 
-function ActionRow({ label, icon, onPress }: { label: string; icon: string; onPress: () => void }) {
+function DeliveryRow({
+  delivery,
+  desktop,
+  onPress,
+}: {
+  delivery: Delivery;
+  desktop: boolean;
+  onPress: () => void;
+}) {
+  const status = STATUS[delivery.status];
+  const schedule = delivery.scheduledDate.toLocaleDateString(undefined, {
+    weekday: desktop ? undefined : 'short',
+    month: 'short',
+    day: 'numeric',
+    year: desktop ? 'numeric' : undefined,
+  });
+
+  if (desktop) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open delivery for ${delivery.customerName}`}
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.desktopRow,
+          pressed && styles.rowPressed,
+        ]}
+      >
+        <View style={styles.customerColumn}>
+          <Text numberOfLines={1} style={textStyles.label}>
+            {delivery.customerName}
+          </Text>
+          <Text numberOfLines={1} style={textStyles.bodySmall}>
+            {delivery.customerAddress}
+          </Text>
+        </View>
+        <View style={styles.referenceColumn}>
+          <Text numberOfLines={1} style={textStyles.bodySmall}>
+            Invoice {delivery.invoiceNumber}
+          </Text>
+          {delivery.orderNumber ? (
+            <Text numberOfLines={1} style={textStyles.bodySmall}>
+              Order {delivery.orderNumber}
+            </Text>
+          ) : null}
+        </View>
+        <Text style={[textStyles.bodySmall, styles.scheduleColumn]}>
+          {schedule}
+        </Text>
+        <View style={styles.statusColumn}>
+          <StatusChip
+            label={status.label}
+            tone={status.tone}
+            icon={status.icon}
+          />
+        </View>
+        <View style={styles.chevronColumn}>
+          <AppIcon
+            name="chevronRight"
+            size={20}
+            color={colors.contentSecondary}
+          />
+        </View>
+      </Pressable>
+    );
+  }
+
   return (
-    <Pressable style={styles.actionRow} onPress={onPress}>
-      <Text style={styles.actionRowIcon}>{icon}</Text>
-      <Text style={styles.actionRowLabel}>{label}</Text>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open delivery for ${delivery.customerName}`}
+      onPress={onPress}
+      style={({ pressed }) => pressed && styles.pressed}
+    >
+      <Card style={styles.deliveryCard}>
+        <View style={styles.cardTop}>
+          <View
+            style={[
+              styles.statusIcon,
+              { backgroundColor: toneBackground(status.tone) },
+            ]}
+          >
+            <AppIcon
+              name={status.icon}
+              size={22}
+              color={toneColor(status.tone)}
+            />
+          </View>
+          <View style={styles.cardCopy}>
+            <Text numberOfLines={1} style={textStyles.heading3}>
+              {delivery.customerName}
+            </Text>
+            <Text numberOfLines={1} style={textStyles.bodySmall}>
+              Invoice {delivery.invoiceNumber}
+            </Text>
+          </View>
+          <StatusChip
+            label={status.label}
+            tone={status.tone}
+            icon={status.icon}
+          />
+        </View>
+        <View style={styles.divider} />
+        <InfoLine icon="location" label={delivery.customerAddress} />
+        <InfoLine
+          icon="calendar"
+          label={schedule}
+          trailing={
+            delivery.items.length
+              ? `${delivery.items.length} item${
+                  delivery.items.length === 1 ? '' : 's'
+                }`
+              : undefined
+          }
+        />
+        {delivery.vehicleUsed ? (
+          <InfoLine icon="vehicle" label={`Vehicle ${delivery.vehicleUsed}`} />
+        ) : null}
+      </Card>
     </Pressable>
   );
 }
 
-function DeliveryCard({ delivery, onPress }: { delivery: Delivery; onPress: () => void }) {
-  const color = statusColor(delivery.status);
-
+function InfoLine({
+  icon,
+  label,
+  trailing,
+}: {
+  icon: AppIconName;
+  label: string;
+  trailing?: string;
+}) {
   return (
-    <Pressable style={[styles.card, shadows.card]} onPress={onPress}>
-      <View style={styles.cardTopRow}>
-        <View style={[styles.statusIconBox, { backgroundColor: `${color}1A` }]}>
-          <Text style={[styles.statusIconText, { color }]}>{statusIcon(delivery.status)}</Text>
-        </View>
-        <View style={styles.cardTextBox}>
-          <Text style={styles.cardName} numberOfLines={1}>
-            {delivery.customerName}
-          </Text>
-          {delivery.customerNumber ? <Text style={styles.cardMeta}>Customer #: {delivery.customerNumber}</Text> : null}
-          {delivery.orderNumber ? <Text style={styles.cardMeta}>Order: {delivery.orderNumber}</Text> : null}
-          <Text style={styles.cardMeta}>Invoice: {delivery.invoiceNumber}</Text>
-        </View>
-        <View style={[styles.statusPill, { backgroundColor: color }]}>
-          <Text style={styles.statusPillText}>{statusLabel(delivery.status)}</Text>
-        </View>
-      </View>
-
-      <View style={styles.divider} />
-
-      <View style={styles.cardRow}>
-        <Text style={styles.cardRowIcon}>📍</Text>
-        <Text style={styles.cardRowText} numberOfLines={1}>
-          {delivery.customerAddress}
-        </Text>
-      </View>
-      <View style={styles.cardRow}>
-        <Text style={styles.cardRowIcon}>📅</Text>
-        <Text style={styles.cardRowText}>{delivery.scheduledDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}</Text>
-        <View style={styles.cardRowSpacer} />
-        {delivery.items.length > 0 ? (
-          <Text style={styles.cardRowText}>
-            📦 {delivery.items.length} item{delivery.items.length > 1 ? 's' : ''}
-          </Text>
-        ) : null}
-      </View>
-      {delivery.vehicleUsed ? (
-        <View style={styles.cardRow}>
-          <Text style={styles.cardRowIcon}>🚙</Text>
-          <Text style={styles.cardRowText}>Vehicle: {delivery.vehicleUsed}</Text>
-        </View>
-      ) : null}
-    </Pressable>
+    <View style={styles.infoLine}>
+      <AppIcon name={icon} size={18} color={colors.contentSecondary} />
+      <Text numberOfLines={1} style={[textStyles.bodyMedium, styles.infoLabel]}>
+        {label}
+      </Text>
+      {trailing ? <Text style={textStyles.bodySmall}>{trailing}</Text> : null}
+    </View>
   );
+}
+
+function toneColor(tone: StatusTone) {
+  return {
+    info: colors.active,
+    warning: colors.attention,
+    success: colors.verified,
+    error: colors.critical,
+  }[tone];
+}
+
+function toneBackground(tone: StatusTone) {
+  return {
+    info: colors.activeMuted,
+    warning: colors.attentionMuted,
+    success: colors.verifiedMuted,
+    error: colors.criticalMuted,
+  }[tone];
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.large },
-  headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.primary, paddingHorizontal: spacing.large, paddingVertical: spacing.medium },
-  headerBarIcon: { fontSize: 20, color: colors.white },
-  tabStrip: { flexDirection: 'row', backgroundColor: colors.primary },
-  tabButton: { flex: 1, alignItems: 'center', paddingVertical: spacing.medium, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabButtonActive: { borderBottomColor: colors.white },
-  tabButtonText: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.7)' },
-  tabButtonTextActive: { color: colors.white },
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, margin: spacing.medium, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4 },
-  searchIcon: { marginRight: spacing.small },
-  searchInput: { flex: 1, paddingVertical: spacing.small + 4 },
-  searchClear: { color: colors.textSecondary, padding: spacing.small },
-  emptyIcon: { fontSize: 56, opacity: 0.3 },
-  emptyText: { fontSize: 17, fontWeight: '600', color: colors.textSecondary, marginTop: spacing.medium },
-  emptyHint: { fontSize: 13, color: colors.textSecondary, marginTop: spacing.small },
-  listContent: { padding: spacing.medium, paddingBottom: 96 },
-  card: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium, marginBottom: spacing.medium },
-  cardTopRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  statusIconBox: { width: 44, height: 44, borderRadius: radii.borderRadius, alignItems: 'center', justifyContent: 'center', marginRight: spacing.small + 4 },
-  statusIconText: { fontSize: 20 },
-  cardTextBox: { flex: 1, marginRight: spacing.small },
-  cardName: { fontSize: 16, fontWeight: '600' },
-  cardMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  statusPill: { borderRadius: 12, paddingHorizontal: spacing.small + 4, paddingVertical: 6, alignSelf: 'flex-start' },
-  statusPillText: { color: colors.white, fontSize: 12, fontWeight: 'bold' },
-  divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.medium },
-  cardRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.small },
-  cardRowIcon: { fontSize: 14, marginRight: spacing.small },
-  cardRowText: { fontSize: 13, color: colors.textSecondary, flexShrink: 1 },
-  cardRowSpacer: { flex: 1 },
-  fab: {
-    position: 'absolute',
-    right: spacing.large,
-    bottom: spacing.large,
+  workspace: { flex: 1 },
+  page: { gap: spacing.medium, padding: spacing.medium },
+  heading: {
+    alignItems: 'flex-start',
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.small,
-    backgroundColor: colors.primary,
-    borderRadius: 28,
-    paddingHorizontal: spacing.large,
-    paddingVertical: spacing.medium,
-    ...shadows.button,
+    gap: spacing.medium,
+    justifyContent: 'space-between',
   },
-  fabIcon: { color: colors.white, fontSize: 16, fontWeight: 'bold' },
-  fabLabel: { color: colors.white, fontWeight: '600' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  actionSheet: { backgroundColor: colors.card, borderTopLeftRadius: radii.cardRadius, borderTopRightRadius: radii.cardRadius, padding: spacing.medium },
-  actionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.medium },
-  actionRowIcon: { fontSize: 18, marginRight: spacing.medium, width: 24, textAlign: 'center' },
-  actionRowLabel: { fontSize: 15, fontWeight: '600' },
+  headingCopy: { flex: 1, gap: spacing.xs },
+  createButton: { minWidth: 150 },
+  filters: { alignItems: 'stretch', gap: spacing.small },
+  searchRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
+  search: { flex: 1 },
+  tabList: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  tab: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: spacing.medium,
+  },
+  tabSelected: { backgroundColor: colors.shell, borderColor: colors.shell },
+  tabLabel: textStyles.labelSmall,
+  tabLabelSelected: { color: colors.onPrimary },
+  actionsButton: { alignSelf: 'flex-start' },
+  listContent: {
+    gap: spacing.small,
+    paddingHorizontal: spacing.medium,
+    paddingBottom: spacing.xxLarge,
+  },
+  tableHeader: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: spacing.small,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    minHeight: 44,
+    paddingHorizontal: spacing.medium,
+  },
+  tableHeading: { ...textStyles.labelSmall, color: colors.contentSecondary },
+  customerColumn: { flex: 1.55, minWidth: 0 },
+  referenceColumn: { flex: 1, minWidth: 0, paddingLeft: spacing.small },
+  scheduleColumn: { flex: 0.8, minWidth: 0, paddingLeft: spacing.small },
+  statusColumn: {
+    alignItems: 'flex-start',
+    flex: 0.85,
+    minWidth: 112,
+    paddingLeft: spacing.small,
+  },
+  chevronColumn: { alignItems: 'flex-end', width: 28 },
+  desktopRow: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: spacing.small,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    minHeight: 76,
+    paddingHorizontal: spacing.medium,
+  },
+  deliveryCard: { gap: spacing.small },
+  cardTop: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.small,
+  },
+  statusIcon: {
+    alignItems: 'center',
+    borderRadius: 14,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  cardCopy: { flex: 1, gap: spacing.xs, minWidth: 0 },
+  divider: {
+    backgroundColor: colors.border,
+    height: StyleSheet.hairlineWidth,
+    marginVertical: spacing.xs,
+  },
+  infoLine: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.small,
+    minHeight: 24,
+  },
+  infoLabel: { flex: 1, minWidth: 0 },
+  actionList: { gap: spacing.small },
+  pressed: { opacity: 0.8 },
+  rowPressed: { backgroundColor: colors.surfaceMuted },
 });

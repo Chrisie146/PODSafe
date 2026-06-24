@@ -1,57 +1,41 @@
-// expects: no route params. Reads the signed-in driver from useAuthStore.
-// navigation: tapping a delivery card should push DeliveryDetails with { deliveryId: delivery.id }.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppIcon, Card, EmptyState, LoadingState, PrimaryButton, Screen, SearchField, StatusChip } from '../../components/ui';
+import { Delivery, DeliveryStatus } from '../../models/delivery';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useDeliveryStore } from '../../stores/useDeliveryStore';
-import { Delivery, DeliveryStatus } from '../../models/delivery';
-import { colors, spacing, radii } from '../../theme/tokens';
+import { colors, radii, spacing } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
-
-/**
- * Ported from lib/screens/driver/delivery_list_screen.dart. The QR-code-for-delivered
- * action (PODTokenService + PODQRCodeDialog) and "Get Directions"/swipe-to-action gestures
- * are not ported here — they depend on services/widgets outside the delivery domain
- * (pod_token_service, url_launcher) that aren't part of this task's scope. The 4-tab
- * (All/Pending/In Transit/Delivered) layout is collapsed into a single filter row of
- * buttons + search box driving one list, which is equivalent UI behavior without needing
- * a tab navigator dependency.
- */
 
 type StatusFilter = 'all' | DeliveryStatus;
 
-const FILTERS: { key: StatusFilter; label: string }[] = [
+const filters: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'pending', label: 'Pending' },
-  { key: 'inTransit', label: 'In Transit' },
+  { key: 'inTransit', label: 'In transit' },
   { key: 'delivered', label: 'Delivered' },
 ];
 
-function statusColor(status: DeliveryStatus): string {
-  switch (status) {
-    case 'delivered':
-      return colors.success;
-    case 'inTransit':
-      return colors.info;
-    case 'pending':
-      return colors.warning;
-    default:
-      return colors.error;
-  }
-}
+const statusTone: Record<DeliveryStatus, 'success' | 'info' | 'warning' | 'error'> = {
+  delivered: 'success',
+  inTransit: 'info',
+  pending: 'warning',
+  failed: 'error',
+};
 
-function statusLabel(status: DeliveryStatus): string {
-  switch (status) {
-    case 'delivered':
-      return 'Delivered';
-    case 'inTransit':
-      return 'In Transit';
-    case 'pending':
-      return 'Pending';
-    default:
-      return 'Unknown';
-  }
-}
+const statusLabel: Record<DeliveryStatus, string> = {
+  delivered: 'Delivered',
+  inTransit: 'In transit',
+  pending: 'Pending',
+  failed: 'Failed',
+};
+
+const statusIcon: Record<DeliveryStatus, 'check' | 'truck' | 'calendar' | 'alert'> = {
+  delivered: 'check',
+  inTransit: 'truck',
+  pending: 'calendar',
+  failed: 'alert',
+};
 
 export interface DeliveryListProps {
   onSelectDelivery?: (delivery: Delivery) => void;
@@ -62,197 +46,117 @@ export default function DeliveryList({ onSelectDelivery }: DeliveryListProps) {
   const deliveries = useDeliveryStore((s) => s.deliveries);
   const isLoading = useDeliveryStore((s) => s.isLoading);
   const loadDriverDeliveries = useDeliveryStore((s) => s.loadDriverDeliveries);
-
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
+  const loadDeliveries = useCallback(() => {
     if (currentUser) {
-      loadDriverDeliveries(currentUser.id);
+      return loadDriverDeliveries(currentUser.id);
     }
+    return Promise.resolve();
   }, [currentUser, loadDriverDeliveries]);
 
-  const handleRefresh = useCallback(() => {
-    if (currentUser) {
-      loadDriverDeliveries(currentUser.id);
-    }
-  }, [currentUser, loadDriverDeliveries]);
+  useEffect(() => {
+    loadDeliveries();
+  }, [loadDeliveries]);
 
   const filteredDeliveries = useMemo(() => {
-    let result = deliveries;
-    if (statusFilter !== 'all') {
-      result = result.filter((d) => d.status === statusFilter);
-    }
     const query = searchQuery.trim().toLowerCase();
-    if (query.length > 0) {
-      result = result.filter(
-        (d) =>
-          d.customerName.toLowerCase().includes(query) ||
-          d.customerAddress.toLowerCase().includes(query) ||
-          d.invoiceNumber.toLowerCase().includes(query),
-      );
-    }
-    return result;
-  }, [deliveries, statusFilter, searchQuery]);
+    return deliveries.filter((delivery) => {
+      const matchingStatus = statusFilter === 'all' || delivery.status === statusFilter;
+      const matchingSearch = !query
+        || delivery.customerName.toLowerCase().includes(query)
+        || delivery.customerAddress.toLowerCase().includes(query)
+        || delivery.invoiceNumber.toLowerCase().includes(query);
+      return matchingStatus && matchingSearch;
+    });
+  }, [deliveries, searchQuery, statusFilter]);
+
+  if (isLoading && deliveries.length === 0) {
+    return <Screen><LoadingState title="Loading deliveries" /></Screen>;
+  }
 
   return (
-    <View style={styles.container}>
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search by customer or address..."
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-      />
-
-      <View style={styles.filterRow}>
-        {FILTERS.map((filter) => (
-          <Pressable
-            key={filter.key}
-            style={[styles.filterChip, statusFilter === filter.key && styles.filterChipActive]}
-            onPress={() => setStatusFilter(filter.key)}
-          >
-            <Text style={[styles.filterChipText, statusFilter === filter.key && styles.filterChipTextActive]}>
-              {filter.label}
-            </Text>
-          </Pressable>
-        ))}
+    <Screen contentContainerStyle={styles.screenContent}>
+      <View style={styles.toolbar}>
+        <SearchField value={searchQuery} onChangeText={setSearchQuery} placeholder="Search customer, address, or invoice" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          {filters.map((filter) => {
+            const selected = statusFilter === filter.key;
+            return (
+              <Pressable
+                key={filter.key}
+                accessibilityRole="button"
+                accessibilityLabel={`Filter deliveries by ${filter.label}`}
+                accessibilityState={{ selected }}
+                onPress={() => setStatusFilter(filter.key)}
+                style={({ pressed }) => [styles.filterButton, selected && styles.filterButtonSelected, pressed && styles.filterButtonPressed]}
+              >
+                <Text style={[styles.filterButtonText, selected && styles.filterButtonTextSelected]}>{filter.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </View>
 
-      {isLoading && deliveries.length === 0 ? (
-        <ActivityIndicator style={styles.loadingIndicator} color={colors.primary} />
-      ) : (
-        <FlatList
-          data={filteredDeliveries}
-          keyExtractor={(item) => item.id}
-          onRefresh={handleRefresh}
-          refreshing={isLoading}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={textStyles.bodyMedium}>
-                {searchQuery.trim().length > 0 ? 'No matching deliveries' : 'No deliveries yet'}
-              </Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <DeliveryCard delivery={item} onPress={() => onSelectDelivery?.(item)} />
-          )}
-        />
-      )}
-    </View>
+      <FlatList
+        data={filteredDeliveries}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        onRefresh={loadDeliveries}
+        refreshing={isLoading}
+        ListHeaderComponent={<Text style={[textStyles.heading3, styles.resultCount]}>{filteredDeliveries.length} delivery{filteredDeliveries.length === 1 ? '' : 'ies'}</Text>}
+        ListEmptyComponent={<EmptyState title={searchQuery.trim() ? 'No matching deliveries' : 'No deliveries assigned'} message={searchQuery.trim() ? 'Try another customer, address, or invoice number.' : 'New delivery work will appear here when it is assigned to you.'} icon="clipboard" />}
+        renderItem={({ item }) => <DeliveryCard delivery={item} onSelect={() => onSelectDelivery?.(item)} />}
+      />
+    </Screen>
   );
 }
 
-function DeliveryCard({ delivery, onPress }: { delivery: Delivery; onPress: () => void }) {
-  const color = statusColor(delivery.status);
+function DeliveryCard({ delivery, onSelect }: { delivery: Delivery; onSelect: () => void }) {
+  const actionLabel = delivery.status === 'pending' ? 'View delivery' : delivery.status === 'inTransit' ? 'Continue delivery' : 'Review delivery';
   return (
-    <Pressable style={styles.card} onPress={onPress}>
-      <View style={styles.cardHeaderRow}>
-        <View style={[styles.statusIconBox, { borderColor: color, backgroundColor: `${color}1A` }]}>
-          <Text style={{ color }}>●</Text>
+    <Card style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={styles.deliveryIdentity}>
+          <View style={styles.iconSurface}><AppIcon name={statusIcon[delivery.status]} size={22} color={colors.shell} /></View>
+          <View style={styles.identityText}>
+            <Text numberOfLines={1} style={textStyles.heading3}>{delivery.customerName}</Text>
+            <Text style={textStyles.bodySmall}>Invoice {delivery.invoiceNumber}</Text>
+          </View>
         </View>
-        <View style={styles.cardHeaderText}>
-          <Text style={[textStyles.bodyLarge, styles.customerName]} numberOfLines={1}>
-            {delivery.customerName}
-          </Text>
-          <Text style={textStyles.bodySmall}>INV: {delivery.invoiceNumber}</Text>
-        </View>
-        <View style={[styles.statusChip, { borderColor: color }]}>
-          <Text style={[styles.statusChipText, { color }]}>{statusLabel(delivery.status)}</Text>
-        </View>
+        <StatusChip label={statusLabel[delivery.status]} tone={statusTone[delivery.status]} />
       </View>
-
-      <View style={styles.addressBox}>
-        <Text style={textStyles.bodyMedium} numberOfLines={2}>
-          {delivery.customerAddress}
-        </Text>
+      <View style={styles.addressRow}>
+        <AppIcon name="location" size={18} color={colors.contentSecondary} />
+        <Text numberOfLines={2} style={[textStyles.bodyMedium, styles.address]}>{delivery.customerAddress}</Text>
       </View>
-
       <View style={styles.metaRow}>
-        {delivery.orderNumber ? (
-          <Text style={textStyles.bodySmall}>Order: {delivery.orderNumber}</Text>
-        ) : null}
-        <Text style={textStyles.bodySmall}>
-          {delivery.scheduledDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-        </Text>
+        {delivery.orderNumber ? <Text style={textStyles.bodySmall}>Order {delivery.orderNumber}</Text> : <Text style={textStyles.bodySmall}>No order reference</Text>}
+        <Text style={textStyles.bodySmall}>{delivery.scheduledDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</Text>
       </View>
-
-      <View style={[styles.ctaButton, { backgroundColor: colors.primary }]}>
-        <Text style={textStyles.buttonText}>{delivery.status === 'pending' ? 'START NOW' : 'CONTINUE'}</Text>
-      </View>
-    </Pressable>
+      <PrimaryButton label={actionLabel} icon="arrowRight" onPress={onSelect} />
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  searchInput: {
-    backgroundColor: colors.card,
-    borderRadius: radii.borderRadius,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    margin: spacing.medium,
-    marginBottom: spacing.small,
-    padding: spacing.small + 4,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.medium,
-    marginBottom: spacing.small,
-    gap: spacing.small,
-  },
-  filterChip: {
-    paddingHorizontal: spacing.small + 4,
-    paddingVertical: 6,
-    borderRadius: radii.borderRadius,
-    borderWidth: 1,
-    borderColor: colors.divider,
-  },
-  filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  filterChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
-  filterChipTextActive: { color: colors.white },
-  loadingIndicator: { marginTop: spacing.xLarge },
-  listContent: { padding: spacing.medium },
-  emptyState: { padding: spacing.large, alignItems: 'center' },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radii.cardRadius,
-    padding: spacing.medium,
-    marginBottom: spacing.medium,
-  },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.small },
-  statusIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: radii.borderRadius - 2,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.small,
-  },
-  cardHeaderText: { flex: 1 },
-  customerName: { fontWeight: 'bold' },
-  statusChip: {
-    borderWidth: 1,
-    borderRadius: radii.borderRadius,
-    paddingHorizontal: spacing.small,
-    paddingVertical: 4,
-  },
-  statusChipText: { fontSize: 11, fontWeight: '600' },
-  addressBox: {
-    backgroundColor: colors.background,
-    borderRadius: radii.borderRadius,
-    padding: spacing.small,
-    marginBottom: spacing.small,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.small,
-  },
-  ctaButton: {
-    borderRadius: radii.buttonRadius,
-    paddingVertical: spacing.small + 4,
-    alignItems: 'center',
-  },
+  screenContent: { paddingHorizontal: 0 },
+  toolbar: { gap: spacing.small, paddingHorizontal: spacing.medium, paddingTop: spacing.medium },
+  filterRow: { gap: spacing.small, paddingRight: spacing.medium },
+  filterButton: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.inputRadius, borderWidth: 1, justifyContent: 'center', minHeight: 48, paddingHorizontal: spacing.medium },
+  filterButtonSelected: { backgroundColor: colors.shell, borderColor: colors.shell },
+  filterButtonPressed: { opacity: 0.84 },
+  filterButtonText: { ...textStyles.label, color: colors.contentSecondary },
+  filterButtonTextSelected: { color: colors.onPrimary },
+  listContent: { flexGrow: 1, padding: spacing.medium },
+  resultCount: { marginBottom: spacing.medium },
+  card: { gap: spacing.medium, marginBottom: spacing.medium },
+  cardHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.small, justifyContent: 'space-between' },
+  deliveryIdentity: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: spacing.small },
+  iconSurface: { alignItems: 'center', backgroundColor: colors.surfaceMuted, borderRadius: radii.inputRadius, height: 44, justifyContent: 'center', width: 44 },
+  identityText: { flex: 1, gap: spacing.xs },
+  addressRow: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.small },
+  address: { flex: 1 },
+  metaRow: { flexDirection: 'row', justifyContent: 'space-between' },
 });

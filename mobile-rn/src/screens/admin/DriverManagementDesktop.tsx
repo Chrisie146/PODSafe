@@ -279,7 +279,7 @@ export default function DriverManagementDesktop({ navigation }: { navigation: { 
     <View style={styles.container}>
       <View style={styles.headerBar}>
         <View style={styles.headerBarLeft}>
-          <Text style={textStyles.heading3}>Driver Management</Text>
+          <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Driver Management</Text>
           <Text style={styles.desktopBadge}>Desktop</Text>
         </View>
         <View style={styles.headerBarRight}>

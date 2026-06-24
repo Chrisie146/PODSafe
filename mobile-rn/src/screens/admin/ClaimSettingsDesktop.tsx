@@ -212,7 +212,7 @@ export default function ClaimSettingsDesktop() {
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <Text style={textStyles.heading3}>Claim Settings</Text>
+        <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Claim Settings</Text>
         <Pressable style={styles.saveButton} disabled={isSaving} onPress={handleSave}>
           {isSaving ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={textStyles.buttonText}>💾 Save</Text>}
         </Pressable>

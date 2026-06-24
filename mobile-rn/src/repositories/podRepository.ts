@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
-import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import firestore, {
+  FirebaseFirestoreTypes,
+} from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
 import TextRecognition from '@react-native-ml-kit/text-recognition';
 import Geolocation from 'react-native-geolocation-service';
@@ -47,22 +49,34 @@ export class PodRepository {
   async uploadFile(path: string, fileUri: string): Promise<string> {
     const contentType = path.endsWith('.png') ? 'image/png' : 'image/jpeg';
     const ref = this.storageInstance.ref(path);
-    await ref.putFile(fileUri, { contentType, cacheControl: 'public, max-age=31536000' });
+    await ref.putFile(fileUri, {
+      contentType,
+      cacheControl: 'public, max-age=31536000',
+    });
     return ref.getDownloadURL();
   }
 
   /** Mirrors _uploadToStorage() for the signature PNG, captured as a base64 data URL. */
-  async uploadSignature(deliveryId: string, signatureDataUrl: string): Promise<string> {
+  async uploadSignature(
+    deliveryId: string,
+    signatureDataUrl: string,
+  ): Promise<string> {
     const path = `pods/${deliveryId}/signature_${Date.now()}.png`;
     const ref = this.storageInstance.ref(path);
-    await ref.putString(signatureDataUrl, 'data_url', { contentType: 'image/png', cacheControl: 'public, max-age=31536000' });
+    await ref.putString(signatureDataUrl, 'data_url', {
+      contentType: 'image/png',
+      cacheControl: 'public, max-age=31536000',
+    });
     return ref.getDownloadURL();
   }
 
   /** Mirrors _getCurrentLocation(). Returns undefined on any failure or denied permission. */
   async getCurrentLocation(): Promise<LocationData | undefined> {
     try {
-      const permission = Platform.OS === 'ios' ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
+      const permission =
+        Platform.OS === 'ios'
+          ? PERMISSIONS.IOS.LOCATION_WHEN_IN_USE
+          : PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION;
       let status = await check(permission);
       if (status === RESULTS.DENIED) {
         status = await request(permission);
@@ -71,13 +85,24 @@ export class PodRepository {
         return undefined;
       }
 
-      const position = await new Promise<{ latitude: number; longitude: number; accuracy: number }>((resolve, reject) => {
-        Geolocation.getCurrentPosition((pos) => resolve(pos.coords), reject, { enableHighAccuracy: true });
+      const position = await new Promise<{
+        latitude: number;
+        longitude: number;
+        accuracy: number;
+      }>((resolve, reject) => {
+        Geolocation.getCurrentPosition(pos => resolve(pos.coords), reject, {
+          enableHighAccuracy: true,
+        });
       });
 
       // NOTE: address is intentionally left blank — the Dart source never reverse-geocodes
       // here either. Real reverse-geocoding lands in Phase 6 (locationRepository.ts).
-      return { latitude: position.latitude, longitude: position.longitude, address: '', accuracy: position.accuracy };
+      return {
+        latitude: position.latitude,
+        longitude: position.longitude,
+        address: '',
+        accuracy: position.accuracy,
+      };
     } catch {
       return undefined;
     }
@@ -100,23 +125,69 @@ export class PodRepository {
   }
 
   /** Mirrors pod_viewer_screen.dart's `_getPODsStream` (companyId + optional `since` date filter, ordered by timestamp desc). */
-  subscribeToCompanyPods(companyId: string, onChange: (pods: PodRecord[]) => void, onError?: (error: Error) => void, filters?: { since?: Date }): () => void {
-    let query: FirebaseFirestoreTypes.Query = this.podsRef().where('companyId', '==', companyId).orderBy('timestamp', 'desc');
+  subscribeToCompanyPods(
+    companyId: string,
+    onChange: (pods: PodRecord[]) => void,
+    onError?: (error: Error) => void,
+    filters?: { since?: Date },
+  ): () => void {
+    let query: FirebaseFirestoreTypes.Query = this.podsRef()
+      .where('companyId', '==', companyId)
+      .orderBy('timestamp', 'desc');
     if (filters?.since) {
-      query = query.where('timestamp', '>=', firestore.Timestamp.fromDate(filters.since));
+      query = query.where(
+        'timestamp',
+        '>=',
+        firestore.Timestamp.fromDate(filters.since),
+      );
     }
 
-    return query.onSnapshot(
-      (snapshot) => onChange(snapshot.docs.map(podFromFirestore)),
-      (error) => onError?.(error as unknown as Error),
+    let fallbackUnsubscribe: (() => void) | null = null;
+    const unsubscribe = query.onSnapshot(
+      snapshot => onChange(snapshot.docs.map(podFromFirestore)),
+      error => {
+        const errorCode = (error as unknown as { code?: string }).code;
+        const needsIndexFallback =
+          errorCode === 'failed-precondition' ||
+          String(error).toLowerCase().includes('index');
+        if (!needsIndexFallback) {
+          onError?.(error as unknown as Error);
+          return;
+        }
+
+        // Match the normal query without requiring a deployed company/timestamp index.
+        fallbackUnsubscribe = this.podsRef()
+          .where('companyId', '==', companyId)
+          .onSnapshot(
+            snapshot => {
+              let pods = snapshot.docs.map(podFromFirestore);
+              if (filters?.since)
+                pods = pods.filter(pod => pod.timestamp >= filters.since!);
+              pods.sort(
+                (left, right) =>
+                  right.timestamp.getTime() - left.timestamp.getTime(),
+              );
+              onChange(pods);
+            },
+            fallbackError => onError?.(fallbackError as unknown as Error),
+          );
+      },
     );
+
+    return () => {
+      unsubscribe();
+      fallbackUnsubscribe?.();
+    };
   }
 
   /**
    * Mirrors tryAutoMatchDelivery(): matches on invoiceNumber, then filters by date
    * (±2 days) and branch/site — see class-level deviation note for the collection-path fix.
    */
-  async tryAutoMatchDelivery(companyId: string, fields: OcrFields): Promise<string | null> {
+  async tryAutoMatchDelivery(
+    companyId: string,
+    fields: OcrFields,
+  ): Promise<string | null> {
     try {
       if (!fields.invoiceNo || !fields.documentDate) {
         return null;
@@ -136,12 +207,19 @@ export class PodRepository {
       const deliveries: Delivery[] = snapshot.docs.map(deliveryFromFirestore);
 
       for (const delivery of deliveries) {
-        const daysDiff = Math.abs((delivery.scheduledDate.getTime() - targetDate.getTime()) / (1000 * 60 * 60 * 24));
+        const daysDiff = Math.abs(
+          (delivery.scheduledDate.getTime() - targetDate.getTime()) /
+            (1000 * 60 * 60 * 24),
+        );
         if (daysDiff > 2) continue;
 
         const branchMatches =
-          (fields.branch != null && delivery.id.toLowerCase().includes(fields.branch.toLowerCase())) ||
-          (fields.site != null && delivery.customerAddress.toLowerCase().includes(fields.site.toLowerCase()));
+          (fields.branch != null &&
+            delivery.id.toLowerCase().includes(fields.branch.toLowerCase())) ||
+          (fields.site != null &&
+            delivery.customerAddress
+              .toLowerCase()
+              .includes(fields.site.toLowerCase()));
 
         if (branchMatches) {
           return delivery.id;
@@ -170,7 +248,16 @@ export class PodRepository {
     ocrConfidence: number;
     detectionFlags: PodRecord['detectionFlags'];
   }): Promise<void> {
-    const { deliveryId, companyId, driverId, delivery, ocrRawText, ocrFields, ocrConfidence, detectionFlags } = params;
+    const {
+      deliveryId,
+      companyId,
+      driverId,
+      delivery,
+      ocrRawText,
+      ocrFields,
+      ocrConfidence,
+      detectionFlags,
+    } = params;
     const existing = await this.getPodById(deliveryId);
 
     const pod: PodRecord = existing ?? {

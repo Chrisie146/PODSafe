@@ -4,12 +4,10 @@
 // added to a DriverStack, register it as a route with `undefined` params.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -24,6 +22,7 @@ import { ChatMessage } from '../../models/chat';
 import MessageBubble from '../../components/MessageBubble';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
+import { IconButton, LoadingState, PrimaryButton, Screen } from '../../components/ui';
 
 const chatRepository = new ChatRepository();
 
@@ -157,11 +156,7 @@ export default function Chat() {
   );
 
   if (!currentUser) {
-    return (
-      <View style={styles.centered}>
-        <Text style={textStyles.bodyMedium}>Please log in</Text>
-      </View>
-    );
+    return <Screen><Text style={textStyles.bodyMedium}>Please log in</Text></Screen>;
   }
 
   if (!conversation) {
@@ -170,13 +165,7 @@ export default function Chat() {
         <Text style={[textStyles.heading3, styles.emptyTitle]}>No conversation yet</Text>
         <Text style={[textStyles.bodyMedium, styles.emptySubtitle]}>Start a conversation with your admin</Text>
         {startError ? <Text style={styles.errorText}>{startError}</Text> : null}
-        <Pressable style={styles.startButton} onPress={handleStartConversation} disabled={isStartingConversation}>
-          {isStartingConversation ? (
-            <ActivityIndicator color={colors.white} />
-          ) : (
-            <Text style={textStyles.buttonText}>Start Conversation</Text>
-          )}
-        </Pressable>
+        <PrimaryButton label="Start conversation" loading={isStartingConversation} onPress={handleStartConversation} />
       </View>
     );
   }
@@ -198,9 +187,7 @@ export default function Chat() {
       </View>
 
       {isLoading && conversationMessages.length === 0 ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <LoadingState title="Loading conversation" />
       ) : conversationMessages.length === 0 ? (
         <View style={styles.centered}>
           <Text style={textStyles.bodyMedium}>No messages yet. Start the conversation!</Text>
@@ -219,14 +206,13 @@ export default function Chat() {
         <TextInput
           style={styles.input}
           placeholder="Type a message..."
+          accessibilityLabel="Message to admin"
           value={messageText}
           onChangeText={setMessageText}
           onSubmitEditing={handleSend}
           multiline
         />
-        <Pressable style={styles.sendButton} onPress={handleSend}>
-          <Text style={styles.sendIcon}>{'➤'}</Text>
-        </Pressable>
+        <IconButton icon="arrowRight" color={colors.onPrimary} accessibilityLabel="Send message" onPress={handleSend} style={styles.sendButton} />
       </View>
     </KeyboardAvoidingView>
   );
@@ -238,12 +224,6 @@ const styles = StyleSheet.create({
   emptyTitle: { marginBottom: spacing.small },
   emptySubtitle: { color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.large },
   errorText: { color: colors.error, marginBottom: spacing.small, textAlign: 'center' },
-  startButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radii.buttonRadius,
-    paddingVertical: 12,
-    paddingHorizontal: spacing.large,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -276,13 +256,10 @@ const styles = StyleSheet.create({
     maxHeight: 120,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.shell,
+    borderRadius: radii.buttonRadius,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: spacing.small,
   },
-  sendIcon: { color: colors.white, fontSize: 18 },
 });

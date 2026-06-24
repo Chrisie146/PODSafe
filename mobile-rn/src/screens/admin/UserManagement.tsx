@@ -1,11 +1,26 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AdminShell } from '../../components/admin/AdminShell';
+import {
+  AppIcon,
+  Card,
+  EmptyState,
+  FormField,
+  IconButton,
+  LoadingState,
+  PrimaryButton,
+  SecondaryButton,
+  StatusChip,
+  SearchField,
+  SuccessButton,
+  AppModal,
+} from '../../components/ui';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUserManagementStore } from '../../stores/useUserManagementStore';
 import { AppUser, ALL_USER_ROLES, UserRole, userRoleDisplayName } from '../../models/user';
 import { getPermissionsForRole } from '../../permissions/permissionService';
 import { permissionDisplayName } from '../../permissions/permission';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
 /**
@@ -13,25 +28,26 @@ import { textStyles } from '../../theme/textStyles';
  * 2026-06-22).
  *
  * Deviations from the Flutter source:
- * - Role "dropdowns" use chip selectors (house convention — no picker library, see
- *   MyClaims.tsx's STATUS_CHIPS).
- * - "Add User" calls the Phase 5 `createUser` Cloud Function directly instead of
- *   replicating the Dart source's sign-out/re-authenticate-with-own-password workaround
- *   (`_AdminPasswordDialog` + `createUserAsAdmin`) — see authRepository.ts's class-level
- *   comment. This will surface a real error until Phase 5 deploys that callable, which is
- *   the correct and expected behavior right now, not a bug in this port.
+ * - Role "dropdowns" use chip selectors (house convention — no picker library).
+ * - "Add User" calls the Phase 5 `createUser` Cloud Function directly instead of the Dart
+ *   source's sign-out/re-authenticate workaround. This surfaces a real error until that
+ *   callable deploys — correct expected behavior, not a port bug.
+ *
+ * UI/UX refresh (Operations Precision): the native stack header, emoji filter/checkbox/FAB/
+ * action glyphs, role hex badges, and bespoke dialogs are replaced with the shared
+ * AppHeader, SVG AppIcon/IconButton, SearchField, StatusChip, Card, AppModal, FormField,
+ * and button primitives. Semantic tokens only.
  */
-const ROLE_BADGE_COLORS: Record<UserRole, string> = {
-  admin: '#E53935',
-  manager: '#1E88E5',
-  logistics: '#43A047',
-  accountant: '#8E24AA',
-  filing_clerk: colors.warning,
-  driver: '#00897B',
-};
+interface UserManagementProps {
+  navigation: {
+    goBack: () => void;
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+  };
+}
 
-export default function UserManagement() {
+export default function UserManagement({ navigation }: UserManagementProps) {
   const currentUser = useAuthStore((s) => s.currentUser);
+  const signOut = useAuthStore((s) => s.signOut);
   const users = useUserManagementStore((s) => s.users);
   const isLoading = useUserManagementStore((s) => s.isLoading);
   const subscribeForCompany = useUserManagementStore((s) => s.subscribeForCompany);
@@ -121,38 +137,57 @@ export default function UserManagement() {
     ]);
   };
 
+  const handleSignOut = () => {
+    Alert.alert('Sign out', 'Sign out of this administration workspace?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+    ]);
+  };
+
   if (!currentUser) {
     return (
-      <View style={styles.centered}>
-        <Text style={textStyles.bodyMedium}>Error: No company ID</Text>
-      </View>
+      <AdminShell
+        activeNav="users"
+        title="Users"
+        onNavigate={(screen) => navigation.navigate(screen)}
+        onLogout={handleSignOut}
+      >
+        <EmptyState icon="alert" title="No company selected" message="A company ID is required to manage users." />
+      </AdminShell>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <AdminShell
+      activeNav="users"
+      title="Users"
+      userName={currentUser.fullName}
+      onNavigate={(screen) => navigation.navigate(screen)}
+      onLogout={handleSignOut}
+    >
+      <View style={styles.container}>
       <View style={styles.searchRow}>
-        <TextInput style={styles.searchInput} placeholder="Search users..." value={searchQuery} onChangeText={setSearchQuery} />
-        <Pressable style={styles.filterButton} onPress={() => setShowFilterModal(true)}>
-          <Text>🔽</Text>
-        </Pressable>
+        <SearchField
+          accessibilityLabel="Search users"
+          placeholder="Search by name or email"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          containerStyle={styles.searchField}
+        />
+        <IconButton icon="filter" accessibilityLabel="Filter users" onPress={() => setShowFilterModal(true)} />
       </View>
 
       {filterRole || showInactive ? (
         <View style={styles.activeFiltersRow}>
-          {filterRole ? (
-            <FilterChip label={userRoleDisplayName(filterRole)} onRemove={() => setFilterRole(null)} />
-          ) : null}
-          {showInactive ? <FilterChip label="Show Inactive" onRemove={() => setShowInactive(false)} /> : null}
+          {filterRole ? <RemovableChip label={userRoleDisplayName(filterRole)} onRemove={() => setFilterRole(null)} /> : null}
+          {showInactive ? <RemovableChip label="Show inactive" onRemove={() => setShowInactive(false)} /> : null}
         </View>
       ) : null}
 
       {isLoading && users.length === 0 ? (
-        <ActivityIndicator style={styles.loadingIndicator} color={colors.primary} />
+        <LoadingState title="Loading users" message="Retrieving user accounts." />
       ) : filteredUsers.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={textStyles.bodyMedium}>No users found</Text>
-        </View>
+        <EmptyState icon="users" title="No users found" message="Adjust your search or filters, or add a new user." />
       ) : (
         <FlatList
           data={filteredUsers}
@@ -162,10 +197,9 @@ export default function UserManagement() {
         />
       )}
 
-      <Pressable style={styles.fab} onPress={() => setShowCreateModal(true)}>
-        <Text style={styles.fabIcon}>👤+</Text>
-        <Text style={styles.fabLabel}>Add User</Text>
-      </Pressable>
+      <View style={styles.bottomBar}>
+        <PrimaryButton label="Add user" icon="plus" onPress={() => setShowCreateModal(true)} />
+      </View>
 
       <FilterModal
         visible={showFilterModal}
@@ -223,54 +257,42 @@ export default function UserManagement() {
           }
         }}
       />
-    </View>
+      </View>
+    </AdminShell>
   );
 }
 
-function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+function RemovableChip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <View style={styles.filterChip}>
-      <Text style={styles.filterChipText}>{label}</Text>
-      <Pressable onPress={onRemove}>
-        <Text style={styles.filterChipRemove}>✕</Text>
+    <View style={styles.removableChip}>
+      <Text style={styles.removableChipText}>{label}</Text>
+      <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${label} filter`} onPress={onRemove}>
+        <AppIcon name="close" size={14} color={colors.contentSecondary} />
       </Pressable>
-    </View>
-  );
-}
-
-function RoleBadge({ role }: { role: UserRole }) {
-  const color = ROLE_BADGE_COLORS[role];
-  return (
-    <View style={[styles.roleBadge, { backgroundColor: color }]}>
-      <Text style={styles.roleBadgeText}>{userRoleDisplayName(role).toUpperCase()}</Text>
     </View>
   );
 }
 
 function UserListTile({ user, onPress }: { user: AppUser; onPress: () => void }) {
   return (
-    <Pressable style={styles.userTile} onPress={onPress}>
-      <View style={[styles.avatar, { backgroundColor: user.isActive ? colors.primary : colors.textSecondary }]}>
-        <Text style={styles.avatarText}>{user.fullName.charAt(0).toUpperCase() || '?'}</Text>
-      </View>
-      <View style={styles.userTileBody}>
-        <Text style={[textStyles.bodyLarge, !user.isActive && styles.inactiveText]}>{user.fullName}</Text>
-        <Text style={textStyles.bodySmall}>{user.email}</Text>
-        <View style={styles.badgeRow}>
-          <RoleBadge role={user.role} />
-          {!user.isActive ? (
-            <View style={styles.inactiveBadge}>
-              <Text style={styles.inactiveBadgeText}>Inactive</Text>
-            </View>
-          ) : null}
-          {user.role === 'driver' && user.approvalStatus !== 'approved' ? (
-            <View style={styles.pendingBadge}>
-              <Text style={styles.pendingBadgeText}>{user.approvalStatus ?? 'Pending'}</Text>
-            </View>
-          ) : null}
+    <Pressable accessibilityRole="button" accessibilityLabel={`Open ${user.fullName}`} onPress={onPress}>
+      <Card style={styles.userTile}>
+        <View style={[styles.avatar, { backgroundColor: user.isActive ? colors.shell : colors.contentSecondary }]}>
+          <Text style={styles.avatarText}>{user.fullName.charAt(0).toUpperCase() || '?'}</Text>
         </View>
-      </View>
-      <Text style={styles.chevron}>›</Text>
+        <View style={styles.userTileBody}>
+          <Text style={[textStyles.bodyLarge, !user.isActive && styles.inactiveText]}>{user.fullName}</Text>
+          <Text style={textStyles.bodySmall}>{user.email}</Text>
+          <View style={styles.badgeRow}>
+            <StatusChip label={userRoleDisplayName(user.role)} tone="info" />
+            {!user.isActive ? <StatusChip label="Inactive" tone="neutral" /> : null}
+            {user.role === 'driver' && user.approvalStatus !== 'approved' ? (
+              <StatusChip label={user.approvalStatus ?? 'Pending'} tone="warning" />
+            ) : null}
+          </View>
+        </View>
+        <AppIcon name="chevronRight" size={20} color={colors.contentSecondary} />
+      </Card>
     </Pressable>
   );
 }
@@ -297,35 +319,37 @@ function FilterModal({
   }, [filterRole, showInactive, visible]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={[styles.modalCard, shadows.card]}>
-          <Text style={textStyles.heading3}>Filter Users</Text>
-
-          <Text style={styles.fieldLabel}>Role</Text>
-          <View style={styles.chipWrap}>
-            <Chip label="All Roles" selected={role == null} onPress={() => setRole(null)} />
-            {ALL_USER_ROLES.map((r) => (
-              <Chip key={r} label={userRoleDisplayName(r)} selected={role === r} onPress={() => setRole(r)} />
-            ))}
-          </View>
-
-          <Pressable style={styles.checkboxRow} onPress={() => setInactive((prev) => !prev)}>
-            <Text style={styles.checkboxGlyph}>{inactive ? '☑' : '☐'}</Text>
-            <Text style={textStyles.bodyMedium}>Show Inactive Users</Text>
-          </Pressable>
-
-          <View style={styles.modalActionsRow}>
-            <Pressable style={styles.modalSecondaryButton} onPress={onClose}>
-              <Text style={styles.modalSecondaryText}>Cancel</Text>
-            </Pressable>
-            <Pressable style={styles.modalPrimaryButton} onPress={() => onApply(role, inactive)}>
-              <Text style={textStyles.buttonText}>Apply</Text>
-            </Pressable>
-          </View>
+    <AppModal
+      visible={visible}
+      title="Filter users"
+      onClose={onClose}
+      footer={
+        <View style={styles.modalActionsRow}>
+          <SecondaryButton label="Cancel" style={styles.modalButton} onPress={onClose} />
+          <PrimaryButton label="Apply" style={styles.modalButton} onPress={() => onApply(role, inactive)} />
         </View>
+      }
+    >
+      <Text style={styles.fieldLabel}>Role</Text>
+      <View style={styles.chipWrap}>
+        <Chip label="All roles" selected={role == null} onPress={() => setRole(null)} />
+        {ALL_USER_ROLES.map((r) => (
+          <Chip key={r} label={userRoleDisplayName(r)} selected={role === r} onPress={() => setRole(r)} />
+        ))}
       </View>
-    </Modal>
+
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: inactive }}
+        style={styles.checkboxRow}
+        onPress={() => setInactive((prev) => !prev)}
+      >
+        <View style={[styles.checkbox, inactive && styles.checkboxChecked]}>
+          {inactive ? <AppIcon name="check" size={14} color={colors.onPrimary} /> : null}
+        </View>
+        <Text style={textStyles.bodyMedium}>Show inactive users</Text>
+      </Pressable>
+    </AppModal>
   );
 }
 
@@ -347,64 +371,49 @@ function UserDetailsModal({
   const permissions = Array.from(getPermissionsForRole(user.role));
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.sheetBackdrop}>
-        <View style={[styles.sheetCard, shadows.card]}>
-          <ScrollView>
-            <View style={styles.sheetHeaderRow}>
-              <Text style={textStyles.heading2}>User Details</Text>
-              <Pressable onPress={onClose}>
-                <Text style={styles.closeGlyph}>✕</Text>
-              </Pressable>
-            </View>
+    <AppModal visible title="User details" onClose={onClose}>
+      <ScrollView style={styles.detailsScroll}>
+        <DetailRow label="Full name" value={user.fullName} />
+        <DetailRow label="Email" value={user.email} />
+        <DetailRow label="Phone" value={user.phoneNumber ?? 'Not provided'} />
+        <DetailRow label="Role" value={userRoleDisplayName(user.role)} />
+        <DetailRow label="Status" value={user.isActive ? 'Active' : 'Inactive'} />
+        <DetailRow label="Company ID" value={user.companyId} />
+
+        {user.role === 'driver' ? (
+          <>
             <View style={styles.divider} />
+            <Text style={textStyles.heading3}>Driver information</Text>
+            <DetailRow label="License number" value={user.licenseNumber ?? 'Not provided'} />
+            <DetailRow label="Vehicle info" value={user.vehicleInfo ?? 'Not provided'} />
+            <DetailRow label="Approval status" value={user.approvalStatus ?? 'Pending'} />
+          </>
+        ) : null}
 
-            <DetailRow label="Full Name" value={user.fullName} />
-            <DetailRow label="Email" value={user.email} />
-            <DetailRow label="Phone" value={user.phoneNumber ?? 'Not provided'} />
-            <DetailRow label="Role" value={userRoleDisplayName(user.role)} />
-            <DetailRow label="Status" value={user.isActive ? 'Active' : 'Inactive'} />
-            <DetailRow label="Company ID" value={user.companyId} />
-
-            {user.role === 'driver' ? (
-              <>
-                <View style={styles.divider} />
-                <Text style={textStyles.heading3}>Driver Information</Text>
-                <DetailRow label="License Number" value={user.licenseNumber ?? 'Not provided'} />
-                <DetailRow label="Vehicle Info" value={user.vehicleInfo ?? 'Not provided'} />
-                <DetailRow label="Approval Status" value={user.approvalStatus ?? 'Pending'} />
-              </>
-            ) : null}
-
-            <View style={styles.sectionSpacer} />
-            <Text style={textStyles.heading3}>Permissions</Text>
-            <View style={styles.chipWrap}>
-              {permissions.map((permission) => (
-                <View key={permission} style={styles.permissionChip}>
-                  <Text style={styles.permissionChipText}>{permissionDisplayName(permission)}</Text>
-                </View>
-              ))}
+        <View style={styles.divider} />
+        <Text style={textStyles.heading3}>Permissions</Text>
+        <View style={styles.chipWrap}>
+          {permissions.map((permission) => (
+            <View key={permission} style={styles.permissionChip}>
+              <Text style={styles.permissionChipText}>{permissionDisplayName(permission)}</Text>
             </View>
-
-            <View style={styles.sectionSpacer} />
-            <Pressable style={styles.modalPrimaryButton} onPress={onEdit}>
-              <Text style={textStyles.buttonText}>✎ Edit User</Text>
-            </Pressable>
-            <Pressable style={styles.modalOutlinedButton} onPress={onToggleStatus}>
-              <Text style={styles.modalOutlinedText}>{user.isActive ? '🚫 Deactivate User' : '✓ Activate User'}</Text>
-            </Pressable>
-            <Pressable style={styles.modalOutlinedButton} onPress={onResetPassword}>
-              <Text style={styles.modalOutlinedText}>🔑 Reset Password</Text>
-            </Pressable>
-            {user.role === 'driver' && user.approvalStatus !== 'approved' ? (
-              <Pressable style={[styles.modalPrimaryButton, styles.approveButton]} onPress={onApproveDriver}>
-                <Text style={textStyles.buttonText}>✓ Approve Driver</Text>
-              </Pressable>
-            ) : null}
-          </ScrollView>
+          ))}
         </View>
-      </View>
-    </Modal>
+
+        <View style={styles.detailActions}>
+          <PrimaryButton label="Edit user" icon="edit" onPress={onEdit} />
+          <SecondaryButton
+            label={user.isActive ? 'Deactivate user' : 'Activate user'}
+            icon={user.isActive ? 'lock' : 'check'}
+            onPress={onToggleStatus}
+          />
+          <SecondaryButton label="Reset password" icon="key" onPress={onResetPassword} />
+          {user.role === 'driver' && user.approvalStatus !== 'approved' ? (
+            <SuccessButton label="Approve driver" icon="check" onPress={onApproveDriver} />
+          ) : null}
+        </View>
+      </ScrollView>
+    </AppModal>
   );
 }
 
@@ -414,44 +423,40 @@ function EditUserModal({ user, onClose, onSave }: { user: AppUser; onClose: () =
   const [role, setRole] = useState(user.role);
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={[styles.modalCard, shadows.card]}>
-          <Text style={textStyles.heading3}>Edit User</Text>
-
-          <Text style={styles.fieldLabel}>Full Name</Text>
-          <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
-
-          <Text style={styles.fieldLabel}>Phone</Text>
-          <TextInput style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-
+    <AppModal
+      visible
+      title="Edit user"
+      onClose={onClose}
+      footer={
+        <View style={styles.modalActionsRow}>
+          <SecondaryButton label="Cancel" style={styles.modalButton} onPress={onClose} />
+          <PrimaryButton
+            label="Update"
+            style={styles.modalButton}
+            onPress={() => {
+              if (fullName.trim().length === 0) {
+                Alert.alert('Missing Information', 'Please enter full name');
+                return;
+              }
+              onSave(fullName.trim(), phone.trim(), role);
+            }}
+          />
+        </View>
+      }
+    >
+      <View style={styles.formFields}>
+        <FormField label="Full name" value={fullName} onChangeText={setFullName} />
+        <FormField label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+        <View>
           <Text style={styles.fieldLabel}>Role</Text>
           <View style={styles.chipWrap}>
             {ALL_USER_ROLES.map((r) => (
               <Chip key={r} label={userRoleDisplayName(r)} selected={role === r} onPress={() => setRole(r)} />
             ))}
           </View>
-
-          <View style={styles.modalActionsRow}>
-            <Pressable style={styles.modalSecondaryButton} onPress={onClose}>
-              <Text style={styles.modalSecondaryText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={styles.modalPrimaryButton}
-              onPress={() => {
-                if (fullName.trim().length === 0) {
-                  Alert.alert('Missing Information', 'Please enter full name');
-                  return;
-                }
-                onSave(fullName.trim(), phone.trim(), role);
-              }}
-            >
-              <Text style={textStyles.buttonText}>Update</Text>
-            </Pressable>
-          </View>
         </View>
       </View>
-    </Modal>
+    </AppModal>
   );
 }
 
@@ -505,42 +510,40 @@ function CreateUserModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <ScrollView style={[styles.modalCard, shadows.card]}>
-          <Text style={textStyles.heading3}>Create New User</Text>
-
-          <Text style={styles.fieldLabel}>Full Name</Text>
-          <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
-
-          <Text style={styles.fieldLabel}>Email</Text>
-          <TextInput style={styles.input} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-
-          <Text style={styles.fieldLabel}>Phone (Optional)</Text>
-          <TextInput style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-
-          <Text style={styles.fieldLabel}>Initial Password</Text>
-          <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry />
-          <Text style={styles.helperText}>User can change this after first login</Text>
-
-          <Text style={styles.fieldLabel}>Role</Text>
-          <View style={styles.chipWrap}>
-            {ALL_USER_ROLES.map((r) => (
-              <Chip key={r} label={userRoleDisplayName(r)} selected={role === r} onPress={() => setRole(r)} />
-            ))}
+    <AppModal
+      visible={visible}
+      title="Create new user"
+      onClose={onClose}
+      footer={
+        <View style={styles.modalActionsRow}>
+          <SecondaryButton label="Cancel" style={styles.modalButton} disabled={isCreating} onPress={onClose} />
+          <PrimaryButton label="Create" style={styles.modalButton} loading={isCreating} onPress={handleCreate} />
+        </View>
+      }
+    >
+      <ScrollView style={styles.detailsScroll}>
+        <View style={styles.formFields}>
+          <FormField label="Full name" value={fullName} onChangeText={setFullName} />
+          <FormField label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+          <FormField label="Phone (optional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+          <FormField
+            label="Initial password"
+            helperText="User can change this after first login"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+          <View>
+            <Text style={styles.fieldLabel}>Role</Text>
+            <View style={styles.chipWrap}>
+              {ALL_USER_ROLES.map((r) => (
+                <Chip key={r} label={userRoleDisplayName(r)} selected={role === r} onPress={() => setRole(r)} />
+              ))}
+            </View>
           </View>
-
-          <View style={styles.modalActionsRow}>
-            <Pressable style={styles.modalSecondaryButton} disabled={isCreating} onPress={onClose}>
-              <Text style={styles.modalSecondaryText}>Cancel</Text>
-            </Pressable>
-            <Pressable style={styles.modalPrimaryButton} disabled={isCreating} onPress={handleCreate}>
-              {isCreating ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={textStyles.buttonText}>Create</Text>}
-            </Pressable>
-          </View>
-        </ScrollView>
-      </View>
-    </Modal>
+        </View>
+      </ScrollView>
+    </AppModal>
   );
 }
 
@@ -555,88 +558,58 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
-    <Pressable style={[styles.chip, selected && styles.chipSelected]} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={[styles.chip, selected && styles.chipSelected]}
+      onPress={onPress}
+    >
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: colors.canvas },
   searchRow: { flexDirection: 'row', gap: spacing.small, padding: spacing.medium, alignItems: 'center' },
-  searchInput: { flex: 1, backgroundColor: colors.card, borderRadius: radii.borderRadius, borderWidth: 1, borderColor: colors.divider, padding: spacing.small + 4 },
-  filterButton: { padding: spacing.small + 4 },
+  searchField: { flex: 1 },
   activeFiltersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small, paddingHorizontal: spacing.medium, marginBottom: spacing.small },
-  filterChip: {
+  removableChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.small,
-    backgroundColor: colors.divider,
-    borderRadius: 16,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radii.inputRadius,
     paddingHorizontal: spacing.small + 4,
-    paddingVertical: 4,
+    paddingVertical: spacing.xs,
   },
-  filterChipText: { fontSize: 12 },
-  filterChipRemove: { fontSize: 12, color: colors.textSecondary },
-  loadingIndicator: { marginTop: spacing.xLarge },
-  listContent: { padding: spacing.medium, paddingBottom: spacing.xLarge * 2 },
-  userTile: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium, marginBottom: spacing.small + 4 },
+  removableChipText: { ...textStyles.labelSmall, color: colors.contentPrimary },
+  listContent: { padding: spacing.medium, paddingBottom: spacing.medium },
+  userTile: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.small + 4 },
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginRight: spacing.medium },
-  avatarText: { color: colors.white, fontWeight: 'bold', fontSize: 18 },
+  avatarText: { color: colors.onPrimary, fontWeight: '700', fontSize: 18 },
   userTileBody: { flex: 1 },
-  inactiveText: { color: colors.textSecondary },
+  inactiveText: { color: colors.contentSecondary },
   badgeRow: { flexDirection: 'row', gap: spacing.small, marginTop: spacing.small, flexWrap: 'wrap' },
-  roleBadge: { borderRadius: 10, paddingHorizontal: spacing.small, paddingVertical: 2 },
-  roleBadgeText: { color: colors.white, fontSize: 10, fontWeight: 'bold' },
-  inactiveBadge: { backgroundColor: colors.textSecondary, borderRadius: 10, paddingHorizontal: spacing.small, paddingVertical: 2 },
-  inactiveBadgeText: { color: colors.white, fontSize: 10 },
-  pendingBadge: { backgroundColor: colors.warning, borderRadius: 10, paddingHorizontal: spacing.small, paddingVertical: 2 },
-  pendingBadgeText: { color: colors.white, fontSize: 10 },
-  chevron: { fontSize: 20, color: colors.textSecondary },
-  fab: {
-    position: 'absolute',
-    right: spacing.large,
-    bottom: spacing.large,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.small,
-    backgroundColor: colors.primary,
-    borderRadius: radii.buttonRadius,
-    paddingHorizontal: spacing.medium,
-    paddingVertical: spacing.small + 4,
-    ...shadows.button,
-  },
-  fabIcon: { color: colors.white, fontSize: 16 },
-  fabLabel: { color: colors.white, fontWeight: '600' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: spacing.large },
-  modalCard: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.large, width: '100%', maxWidth: 420, maxHeight: '85%' },
-  fieldLabel: { fontWeight: '600', marginTop: spacing.medium, marginBottom: spacing.small },
-  input: { borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, padding: spacing.small + 4, backgroundColor: colors.background },
-  helperText: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  bottomBar: { padding: spacing.medium, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
+  fieldLabel: { ...textStyles.label, marginBottom: spacing.small, marginTop: spacing.small },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small },
-  chip: { borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: 6, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.divider },
-  chipSelected: { backgroundColor: `${colors.primary}33`, borderColor: colors.primary },
-  chipText: { fontSize: 13, color: colors.textSecondary },
-  chipTextSelected: { color: colors.primary, fontWeight: '600' },
+  chip: { borderRadius: radii.inputRadius, paddingHorizontal: spacing.small + 4, paddingVertical: 6, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  chipSelected: { backgroundColor: colors.activeMuted, borderColor: colors.shell },
+  chipText: { ...textStyles.bodySmall, color: colors.contentSecondary },
+  chipTextSelected: { color: colors.shell, fontWeight: '600' },
   checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, marginTop: spacing.medium },
-  checkboxGlyph: { fontSize: 20, color: colors.primary },
-  modalActionsRow: { flexDirection: 'row', gap: spacing.medium, marginTop: spacing.large },
-  modalSecondaryButton: { flex: 1, alignItems: 'center', paddingVertical: spacing.small + 4, borderRadius: radii.buttonRadius, borderWidth: 1, borderColor: colors.divider },
-  modalSecondaryText: { color: colors.textSecondary, fontWeight: '600' },
-  modalPrimaryButton: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4, marginTop: spacing.small },
-  modalOutlinedButton: { alignItems: 'center', borderWidth: 1, borderColor: colors.divider, borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4, marginTop: spacing.small },
-  modalOutlinedText: { color: colors.textPrimary, fontWeight: '600' },
-  approveButton: { backgroundColor: colors.success },
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheetCard: { backgroundColor: colors.card, borderTopLeftRadius: radii.cardRadius, borderTopRightRadius: radii.cardRadius, padding: spacing.large, maxHeight: '90%' },
-  sheetHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  closeGlyph: { fontSize: 20, color: colors.textSecondary },
-  divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.medium },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { backgroundColor: colors.shell, borderColor: colors.shell },
+  modalActionsRow: { flexDirection: 'row', gap: spacing.medium },
+  modalButton: { flex: 1 },
+  formFields: { gap: spacing.medium },
+  detailsScroll: { maxHeight: 420 },
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.medium },
   detailRow: { flexDirection: 'row', marginBottom: spacing.small + 4 },
-  detailLabel: { width: 120, fontWeight: '600', color: colors.textSecondary },
+  detailLabel: { width: 120, ...textStyles.bodySmall, fontWeight: '600', color: colors.contentSecondary },
   detailValue: { flex: 1 },
-  sectionSpacer: { height: spacing.medium },
-  permissionChip: { backgroundColor: colors.background, borderRadius: radii.borderRadius, borderWidth: 1, borderColor: colors.divider, paddingHorizontal: spacing.small + 4, paddingVertical: 4 },
-  permissionChipText: { fontSize: 11, color: colors.textSecondary },
+  detailActions: { gap: spacing.small, marginTop: spacing.large },
+  permissionChip: { backgroundColor: colors.surfaceMuted, borderRadius: radii.inputRadius, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.small + 4, paddingVertical: spacing.xs },
+  permissionChipText: { ...textStyles.bodySmall, color: colors.contentSecondary },
 });

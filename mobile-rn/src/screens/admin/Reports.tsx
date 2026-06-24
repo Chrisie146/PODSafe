@@ -1,8 +1,26 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import firestore from '@react-native-firebase/firestore';
+import { AdminShell } from '../../components/admin/AdminShell';
+import {
+  AppIcon,
+  Card,
+  EmptyState,
+  FormField,
+  LoadingState,
+  PrimaryButton,
+  SecondaryButton,
+  AppModal,
+} from '../../components/ui';
 import { useAuthStore } from '../../stores/useAuthStore';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
 /**
@@ -11,29 +29,29 @@ import { textStyles } from '../../theme/textStyles';
  * (Deliveries/Drivers/Claims/Customers/PODs), each with its own raw-Firestore
  * aggregation, a summary-stat grid, and a scrollable data table, over a date range.
  *
- * Group A responsive-split screen — only the mobile path is ported this pass; the
- * >1200px desktop branch lands in Phase 4. Confirmed via direct read of the full source:
- * no chart library or CSV export dependency here (unlike analytics_dashboard_screen.dart,
- * which needs `fl_chart` — still blocked).
+ * Group A responsive-split screen — only the mobile path is ported this pass; the >1200px
+ * desktop branch lands in Phase 4.
  *
  * Deviations from the Flutter source:
- * - All 5 report types' data-aggregation queries are ported as faithfully as possible,
- *   reading raw Firestore doc data directly (not through the typed Customer/Claim/etc.
- *   models) — same as the Dart source, which never goes through DeliveryService/
- *   ClaimService/etc. for this screen either, and reads ad-hoc fields (`rating`,
- *   `preferredDriver`, `signatureQuality`, `deviceInfo`) that don't exist on any of this
- *   app's typed models anywhere else.
- * - Material `DataTable` becomes a custom horizontally + vertically scrollable table
- *   (same fixed-width-column pattern as BulkItemCreation.tsx/CustomerCreation.tsx, but
- *   read-only here — no editable cells). Column/row definitions per report type are
- *   data-driven (a column-config array + a generic row renderer) instead of 5 separate
- *   hand-written `DataColumn`/`DataRow` blocks — same visual output, less duplication.
- * - The date-range `showDateRangePicker` becomes a Modal with two plain `YYYY-MM-DD`
- *   text inputs, same precedent as ClaimsDashboard.tsx's date-range filter (no native
- *   date-range-picker library installed).
- * - Report-type selector `FilterChip`s become the existing Chip pattern used elsewhere.
+ * - All 5 report types' data-aggregation queries read raw Firestore doc data directly,
+ *   matching the Dart source (ad-hoc fields not on any typed model).
+ * - Material `DataTable` → custom horizontally + vertically scrollable, data-driven table.
+ * - `showDateRangePicker` → a modal with two `YYYY-MM-DD` text fields.
+ * - Report-type selector `FilterChip`s → the existing Chip pattern.
+ *
+ * UI/UX refresh (Operations Precision): the custom navy header, emoji refresh/calendar/
+ * empty/signed/photo/location glyphs are replaced with the shared AppHeader, SVG AppIcon,
+ * Card, EmptyState, LoadingState, AppModal, FormField, and button primitives. Semantic
+ * tokens only.
  */
 export type ReportType = 'delivery' | 'driver' | 'claims' | 'customers' | 'pod';
+
+interface ReportsProps {
+  navigation: {
+    goBack: () => void;
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+  };
+}
 
 const REPORT_TABS: { key: ReportType; label: string }[] = [
   { key: 'delivery', label: 'Deliveries' },
@@ -76,38 +94,38 @@ function getStatusColor(status: unknown): string {
     case 'delivered':
     case 'completed':
     case 'approved':
-      return colors.success;
+      return colors.verified;
     case 'pending':
-      return colors.warning;
+      return colors.attention;
     case 'intransit':
     case 'intransit_':
-      return colors.info;
+      return colors.active;
     case 'rejected':
-      return colors.error;
+      return colors.critical;
     default:
-      return colors.textSecondary;
+      return colors.contentSecondary;
   }
 }
 
 function getPriorityColor(priority: unknown): string {
   switch (String(priority).toLowerCase()) {
     case 'urgent':
-      return colors.error;
+      return colors.critical;
     case 'high':
-      return colors.warning;
+      return colors.attention;
     case 'normal':
-      return colors.info;
+      return colors.active;
     case 'low':
-      return colors.success;
+      return colors.verified;
     default:
-      return colors.textSecondary;
+      return colors.contentSecondary;
   }
 }
 
-function StatusChip({ label, color }: { label: string; color: string }) {
+function CellChip({ label, color }: { label: string; color: string }) {
   return (
-    <View style={[styles.statusChip, { backgroundColor: `${color}4D` }]}>
-      <Text style={[styles.statusChipText, { color }]}>{label}</Text>
+    <View style={[styles.cellChip, { backgroundColor: `${color}26`, borderColor: color }]}>
+      <Text style={[styles.cellChipText, { color }]}>{label}</Text>
     </View>
   );
 }
@@ -460,50 +478,50 @@ export const LOADERS: Record<ReportType, (companyId: string, start: Date, end: D
 
 export const SUMMARY_CARDS: Record<ReportType, SummaryCardDef[]> = {
   delivery: [
-    { label: 'Total', key: 'total', color: colors.info },
-    { label: 'Completed', key: 'completed', color: colors.success },
-    { label: 'Pending', key: 'pending', color: colors.warning },
-    { label: 'In Transit', key: 'inTransit', color: '#9C27B0' },
-    { label: 'Completion Rate', key: 'completionRate', color: '#00897B', format: (v) => `${v}%` },
-    { label: 'On-Time Rate', key: 'onTimeRate', color: '#3F51B5', format: (v) => `${v}%` },
-    { label: 'Total Items', key: 'totalItems', color: '#FFB300' },
-    { label: 'Revenue', key: 'totalAmount', color: colors.success, format: formatCurrency },
+    { label: 'Total', key: 'total', color: colors.active },
+    { label: 'Completed', key: 'completed', color: colors.verified },
+    { label: 'Pending', key: 'pending', color: colors.attention },
+    { label: 'In Transit', key: 'inTransit', color: colors.shell },
+    { label: 'Completion Rate', key: 'completionRate', color: colors.verified, format: (v) => `${v}%` },
+    { label: 'On-Time Rate', key: 'onTimeRate', color: colors.shell, format: (v) => `${v}%` },
+    { label: 'Total Items', key: 'totalItems', color: colors.attention },
+    { label: 'Revenue', key: 'totalAmount', color: colors.verified, format: formatCurrency },
   ],
   driver: [
-    { label: 'Total Drivers', key: 'totalDrivers', color: colors.info },
-    { label: 'Active', key: 'activeDrivers', color: colors.success },
-    { label: 'Approved', key: 'approvedDrivers', color: '#9C27B0' },
-    { label: 'Pending', key: 'pendingApprovals', color: colors.warning },
-    { label: 'Total Deliveries', key: 'totalDeliveries', color: '#00897B' },
-    { label: 'Completion Rate', key: 'completionRate', color: '#3F51B5', format: (v) => `${v}%` },
-    { label: 'Avg On-Time', key: 'averageOnTimeRate', color: '#FFB300', format: (v) => `${v}%` },
-    { label: 'Total Revenue', key: 'totalRevenue', color: colors.success, format: formatCurrency },
+    { label: 'Total Drivers', key: 'totalDrivers', color: colors.active },
+    { label: 'Active', key: 'activeDrivers', color: colors.verified },
+    { label: 'Approved', key: 'approvedDrivers', color: colors.shell },
+    { label: 'Pending', key: 'pendingApprovals', color: colors.attention },
+    { label: 'Total Deliveries', key: 'totalDeliveries', color: colors.verified },
+    { label: 'Completion Rate', key: 'completionRate', color: colors.shell, format: (v) => `${v}%` },
+    { label: 'Avg On-Time', key: 'averageOnTimeRate', color: colors.attention, format: (v) => `${v}%` },
+    { label: 'Total Revenue', key: 'totalRevenue', color: colors.verified, format: formatCurrency },
   ],
   claims: [
-    { label: 'Total Claims', key: 'total', color: colors.info },
-    { label: 'Pending', key: 'pending', color: colors.warning },
-    { label: 'Approved', key: 'approved', color: colors.success },
-    { label: 'Rejected', key: 'rejected', color: colors.error },
-    { label: 'Urgent', key: 'urgentClaims', color: colors.error },
-    { label: 'Overdue', key: 'overdue', color: '#9C27B0' },
-    { label: 'Resolution Rate', key: 'resolutionRate', color: '#00897B', format: (v) => `${v}%` },
-    { label: 'Avg Resolution', key: 'averageResolutionTime', color: '#3F51B5' },
+    { label: 'Total Claims', key: 'total', color: colors.active },
+    { label: 'Pending', key: 'pending', color: colors.attention },
+    { label: 'Approved', key: 'approved', color: colors.verified },
+    { label: 'Rejected', key: 'rejected', color: colors.critical },
+    { label: 'Urgent', key: 'urgentClaims', color: colors.critical },
+    { label: 'Overdue', key: 'overdue', color: colors.shell },
+    { label: 'Resolution Rate', key: 'resolutionRate', color: colors.verified, format: (v) => `${v}%` },
+    { label: 'Avg Resolution', key: 'averageResolutionTime', color: colors.shell },
   ],
   customers: [
-    { label: 'Total Customers', key: 'totalCustomers', color: colors.info },
-    { label: 'Active', key: 'activeCustomers', color: colors.success },
-    { label: 'VIP Customers', key: 'vipCustomers', color: '#9C27B0' },
-    { label: 'Total Deliveries', key: 'totalDeliveries', color: '#00897B' },
-    { label: 'Completion Rate', key: 'completionRate', color: '#3F51B5', format: (v) => `${v}%` },
-    { label: 'Total Revenue', key: 'totalRevenue', color: colors.success, format: formatCurrency },
-    { label: 'Avg Order Value', key: 'averageOrderValue', color: '#FFB300', format: (v) => `R${v}` },
-    { label: 'Pending Orders', key: 'totalPending', color: colors.warning },
+    { label: 'Total Customers', key: 'totalCustomers', color: colors.active },
+    { label: 'Active', key: 'activeCustomers', color: colors.verified },
+    { label: 'VIP Customers', key: 'vipCustomers', color: colors.shell },
+    { label: 'Total Deliveries', key: 'totalDeliveries', color: colors.verified },
+    { label: 'Completion Rate', key: 'completionRate', color: colors.shell, format: (v) => `${v}%` },
+    { label: 'Total Revenue', key: 'totalRevenue', color: colors.verified, format: formatCurrency },
+    { label: 'Avg Order Value', key: 'averageOrderValue', color: colors.attention, format: (v) => `R${v}` },
+    { label: 'Pending Orders', key: 'totalPending', color: colors.attention },
   ],
   pod: [
-    { label: 'Total PODs', key: 'total', color: colors.info },
-    { label: 'Signed', key: 'signed', color: colors.success },
-    { label: 'With Photos', key: 'withPhotos', color: '#9C27B0' },
-    { label: 'With Notes', key: 'withNotes', color: '#00897B' },
+    { label: 'Total PODs', key: 'total', color: colors.active },
+    { label: 'Signed', key: 'signed', color: colors.verified },
+    { label: 'With Photos', key: 'withPhotos', color: colors.shell },
+    { label: 'With Notes', key: 'withNotes', color: colors.verified },
   ],
 };
 
@@ -514,7 +532,7 @@ export const COLUMNS: Record<ReportType, ReportColumn[]> = {
     { label: 'Phone', width: 110, render: (r) => <Text style={styles.cellText}>{String(r.customerPhone)}</Text> },
     { label: 'Address', width: 150, render: (r) => <Text style={styles.cellText}>{truncate(r.address, 20)}</Text> },
     { label: 'Driver', width: 100, render: (r) => <Text style={styles.cellText}>{truncate(r.driverName, 12)}</Text> },
-    { label: 'Status', width: 90, render: (r) => <StatusChip label={String(r.status)} color={getStatusColor(r.status)} /> },
+    { label: 'Status', width: 90, render: (r) => <CellChip label={String(r.status)} color={getStatusColor(r.status)} /> },
     { label: 'Scheduled', width: 80, render: (r) => <Text style={styles.cellText}>{formatTimestamp(r.scheduledDate)}</Text> },
     { label: 'Completed', width: 80, render: (r) => <Text style={styles.cellText}>{formatTimestamp(r.completedAt)}</Text> },
     { label: 'Items', width: 60, render: (r) => <Text style={styles.cellText}>{String(r.itemCount)}</Text> },
@@ -527,7 +545,7 @@ export const COLUMNS: Record<ReportType, ReportColumn[]> = {
     { label: 'Name', width: 130, render: (r) => <Text style={styles.cellText}>{String(r.fullName)}</Text> },
     { label: 'Email', width: 150, render: (r) => <Text style={styles.cellText}>{truncate(r.email, 20)}</Text> },
     { label: 'Phone', width: 110, render: (r) => <Text style={styles.cellText}>{String(r.phone)}</Text> },
-    { label: 'Status', width: 90, render: (r) => <StatusChip label={String(r.approvalStatus)} color={getStatusColor(r.approvalStatus)} /> },
+    { label: 'Status', width: 90, render: (r) => <CellChip label={String(r.approvalStatus)} color={getStatusColor(r.approvalStatus)} /> },
     { label: 'Deliveries', width: 80, render: (r) => <Text style={styles.cellText}>{String(r.deliveriesCount)}</Text> },
     { label: 'Completed', width: 80, render: (r) => <Text style={styles.cellText}>{String(r.completedCount)}</Text> },
     { label: 'On-Time %', width: 80, render: (r) => <Text style={styles.cellText}>{String(r.onTimeRate)}%</Text> },
@@ -538,8 +556,8 @@ export const COLUMNS: Record<ReportType, ReportColumn[]> = {
     { label: 'Claim #', width: 110, render: (r) => <Text style={styles.cellText}>{truncate(r.claimNumber, 12)}</Text> },
     { label: 'Customer', width: 120, render: (r) => <Text style={styles.cellText}>{truncate(r.customerName, 15)}</Text> },
     { label: 'Type', width: 100, render: (r) => <Text style={styles.cellText}>{String(r.type)}</Text> },
-    { label: 'Priority', width: 90, render: (r) => <StatusChip label={String(r.priority)} color={getPriorityColor(r.priority)} /> },
-    { label: 'Status', width: 90, render: (r) => <StatusChip label={String(r.status)} color={getStatusColor(r.status)} /> },
+    { label: 'Priority', width: 90, render: (r) => <CellChip label={String(r.priority)} color={getPriorityColor(r.priority)} /> },
+    { label: 'Status', width: 90, render: (r) => <CellChip label={String(r.status)} color={getStatusColor(r.status)} /> },
     { label: 'Amount', width: 90, render: (r) => <Text style={styles.cellText}>{formatCurrency(r.amount)}</Text> },
     { label: 'Due Date', width: 80, render: (r) => <Text style={styles.cellText}>{formatTimestamp(r.dueDate)}</Text> },
     { label: 'Resolution', width: 100, render: (r) => <Text style={styles.cellText}>{truncate(r.resolution, 10)}</Text> },
@@ -560,16 +578,34 @@ export const COLUMNS: Record<ReportType, ReportColumn[]> = {
     { label: 'Driver', width: 110, render: (r) => <Text style={styles.cellText}>{truncate(r.driverName, 12)}</Text> },
     { label: 'Customer', width: 120, render: (r) => <Text style={styles.cellText}>{truncate(r.customerName, 15)}</Text> },
     { label: 'Receiver', width: 110, render: (r) => <Text style={styles.cellText}>{truncate(r.receiverName, 15)}</Text> },
-    { label: 'Signed', width: 60, render: (r) => <Text style={styles.cellText}>{r.hasSigned ? '✓' : '✕'}</Text> },
-    { label: 'Photos', width: 70, render: (r) => <Text style={styles.cellText}>{r.hasPhotos ? '📷' : '—'} {String(r.photoCount)}</Text> },
+    {
+      label: 'Signed',
+      width: 60,
+      render: (r) => <AppIcon name={r.hasSigned ? 'check' : 'close'} size={16} color={r.hasSigned ? colors.verified : colors.critical} />,
+    },
+    {
+      label: 'Photos',
+      width: 70,
+      render: (r) => (
+        <View style={styles.cellIconRow}>
+          {r.hasPhotos ? <AppIcon name="image" size={16} color={colors.contentSecondary} /> : <Text style={styles.cellText}>—</Text>}
+          <Text style={styles.cellText}>{String(r.photoCount)}</Text>
+        </View>
+      ),
+    },
     { label: 'Notes', width: 110, render: (r) => <Text style={styles.cellText}>{truncate(r.notes, 10)}</Text> },
-    { label: 'Location', width: 70, render: (r) => <Text style={styles.cellText}>{r.hasLocation ? '📍' : '—'}</Text> },
+    {
+      label: 'Location',
+      width: 70,
+      render: (r) => (r.hasLocation ? <AppIcon name="location" size={16} color={colors.shell} /> : <Text style={styles.cellText}>—</Text>),
+    },
     { label: 'Date', width: 80, render: (r) => <Text style={styles.cellText}>{formatTimestamp(r.createdAt)}</Text> },
   ],
 };
 
-export default function Reports() {
+export default function Reports({ navigation }: ReportsProps) {
   const currentUser = useAuthStore((s) => s.currentUser);
+  const signOut = useAuthStore((s) => s.signOut);
 
   const [selectedReport, setSelectedReport] = useState<ReportType>('delivery');
   const [startDate, setStartDate] = useState(new Date(Date.now() - 7 * 86400000));
@@ -614,41 +650,56 @@ export default function Reports() {
   const summaryCards = SUMMARY_CARDS[selectedReport];
   const tableWidth = columns.reduce((sum, c) => sum + c.width + spacing.small, 0);
 
+  const openDateRange = () => {
+    setDateStartText(startDate.toISOString().slice(0, 10));
+    setDateEndText(endDate.toISOString().slice(0, 10));
+    setShowDateModal(true);
+  };
+
+  const handleSignOut = () => {
+    Alert.alert('Sign out', 'Sign out of this administration workspace?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+    ]);
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Text style={textStyles.heading2}>Reports</Text>
-        <View style={styles.headerBarActions}>
-          <Pressable onPress={loadReport}>
-            <Text style={styles.headerBarIcon}>↻</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              setDateStartText(startDate.toISOString().slice(0, 10));
-              setDateEndText(endDate.toISOString().slice(0, 10));
-              setShowDateModal(true);
-            }}
-          >
-            <Text style={styles.headerBarIcon}>📅</Text>
-          </Pressable>
-        </View>
+    <AdminShell
+      activeNav="reports"
+      title="Reports"
+      userName={currentUser?.fullName}
+      onNavigate={(screen) => navigation.navigate(screen)}
+      onRefresh={loadReport}
+      onLogout={handleSignOut}
+    >
+      <View style={styles.container}>
+      <View style={styles.toolbar}>
+        <SecondaryButton
+          label="Date range"
+          icon="calendar"
+          onPress={openDateRange}
+        />
       </View>
 
       {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <LoadingState title="Building report" message="Aggregating records for the selected range." />
       ) : (
         <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.reportTypeRow}>
             {REPORT_TABS.map((tab) => (
-              <Pressable key={tab.key} style={[styles.chip, selectedReport === tab.key && styles.chipSelected]} onPress={() => setSelectedReport(tab.key)}>
+              <Pressable
+                key={tab.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedReport === tab.key }}
+                style={[styles.chip, selectedReport === tab.key && styles.chipSelected]}
+                onPress={() => setSelectedReport(tab.key)}
+              >
                 <Text style={[styles.chipText, selectedReport === tab.key && styles.chipTextSelected]}>{tab.label}</Text>
               </Pressable>
             ))}
           </ScrollView>
 
-          <View style={[styles.card, shadows.card]}>
+          <Card style={styles.card}>
             <Text style={textStyles.heading3}>Summary</Text>
             <View style={styles.summaryGrid}>
               {summaryCards.map((card) => (
@@ -660,16 +711,15 @@ export default function Reports() {
                 </View>
               ))}
             </View>
-          </View>
+          </Card>
 
           {reportData.length === 0 ? (
-            <View style={[styles.card, shadows.card, styles.emptyState]}>
-              <Text style={styles.emptyStateIcon}>📭</Text>
-              <Text style={styles.emptyStateText}>No data available</Text>
-            </View>
+            <Card style={styles.card}>
+              <EmptyState icon="clipboard" title="No data available" message="No records match this report type and date range." />
+            </Card>
           ) : (
             <ScrollView horizontal>
-              <View style={[styles.card, shadows.card, styles.tableCard, { width: tableWidth }]}>
+              <Card style={[styles.card, styles.tableCard, { width: tableWidth }]}>
                 <View style={styles.tableHeaderRow}>
                   {columns.map((col) => (
                     <Text key={col.label} style={[styles.tableHeaderCell, { width: col.width }]}>
@@ -686,71 +736,63 @@ export default function Reports() {
                     ))}
                   </View>
                 ))}
-              </View>
+              </Card>
             </ScrollView>
           )}
         </ScrollView>
       )}
 
-      <Modal visible={showDateModal} transparent animationType="fade" onRequestClose={() => setShowDateModal(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, shadows.card]}>
-            <Text style={textStyles.heading3}>Date Range</Text>
-            <Text style={styles.fieldLabel}>Start Date (YYYY-MM-DD)</Text>
-            <TextInput style={styles.dateInput} value={dateStartText} onChangeText={setDateStartText} />
-            <Text style={styles.fieldLabel}>End Date (YYYY-MM-DD)</Text>
-            <TextInput style={styles.dateInput} value={dateEndText} onChangeText={setDateEndText} />
-            <View style={styles.modalButtonRow}>
-              <Pressable style={styles.modalSecondaryButton} onPress={() => setShowDateModal(false)}>
-                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalPrimaryButton} onPress={applyDateRange}>
-                <Text style={textStyles.buttonText}>Apply</Text>
-              </Pressable>
-            </View>
+      <AppModal
+        visible={showDateModal}
+        title="Date range"
+        onClose={() => setShowDateModal(false)}
+        footer={
+          <View style={styles.modalButtonRow}>
+            <SecondaryButton label="Cancel" style={styles.modalButton} onPress={() => setShowDateModal(false)} />
+            <PrimaryButton label="Apply" style={styles.modalButton} onPress={applyDateRange} />
           </View>
+        }
+      >
+        <View style={styles.dateFields}>
+          <FormField label="Start date" helperText="Format: YYYY-MM-DD" value={dateStartText} onChangeText={setDateStartText} autoCapitalize="none" />
+          <FormField label="End date" helperText="Format: YYYY-MM-DD" value={dateEndText} onChangeText={setDateEndText} autoCapitalize="none" />
         </View>
-      </Modal>
-    </View>
+      </AppModal>
+      </View>
+    </AdminShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.primary, paddingHorizontal: spacing.large, paddingVertical: spacing.medium },
-  headerBarActions: { flexDirection: 'row', gap: spacing.medium },
-  headerBarIcon: { fontSize: 18, color: colors.white },
+  container: { flex: 1, backgroundColor: colors.canvas },
+  toolbar: {
+    alignItems: 'flex-end',
+    paddingHorizontal: spacing.medium,
+    paddingTop: spacing.medium,
+  },
   content: { flex: 1 },
   contentInner: { padding: spacing.medium, paddingBottom: spacing.xLarge },
   reportTypeRow: { gap: spacing.small, marginBottom: spacing.medium },
-  chip: { borderRadius: radii.borderRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small + 4, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.divider },
-  chipSelected: { backgroundColor: `${colors.primary}33`, borderColor: colors.primary },
-  chipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
-  chipTextSelected: { color: colors.primary },
-  card: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium, marginBottom: spacing.large },
+  chip: { borderRadius: radii.inputRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small + 4, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  chipSelected: { backgroundColor: colors.activeMuted, borderColor: colors.shell },
+  chipText: { ...textStyles.bodySmall, color: colors.contentSecondary, fontWeight: '600' },
+  chipTextSelected: { color: colors.shell },
+  card: { marginBottom: spacing.large },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small + 4, marginTop: spacing.medium },
-  summaryCard: { width: '47%', borderRadius: radii.borderRadius, borderWidth: 1, padding: spacing.small + 4 },
-  summaryLabel: { fontSize: 12, color: colors.textSecondary },
-  summaryValue: { fontSize: 20, fontWeight: 'bold', marginTop: 4 },
-  emptyState: { alignItems: 'center', paddingVertical: spacing.large },
-  emptyStateIcon: { fontSize: 40, opacity: 0.4 },
-  emptyStateText: { color: colors.textSecondary, marginTop: spacing.small },
+  summaryCard: { width: '47%', borderRadius: radii.inputRadius, borderWidth: 1, padding: spacing.small + 4 },
+  summaryLabel: { ...textStyles.bodySmall, color: colors.contentSecondary },
+  summaryValue: { ...textStyles.heading3, marginTop: 4 },
   tableCard: { padding: 0, overflow: 'hidden' },
-  tableHeaderRow: { flexDirection: 'row', backgroundColor: `${colors.primary}1A`, paddingVertical: spacing.small + 4, paddingHorizontal: spacing.small },
-  tableHeaderCell: { fontWeight: 'bold', fontSize: 12, paddingRight: spacing.small },
-  tableRow: { flexDirection: 'row', paddingVertical: spacing.small + 4, paddingHorizontal: spacing.small, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  tableRowAlt: { backgroundColor: colors.background },
+  tableHeaderRow: { flexDirection: 'row', backgroundColor: colors.surfaceMuted, paddingVertical: spacing.small + 4, paddingHorizontal: spacing.small },
+  tableHeaderCell: { ...textStyles.labelSmall, color: colors.contentPrimary, fontWeight: '700', paddingRight: spacing.small },
+  tableRow: { flexDirection: 'row', paddingVertical: spacing.small + 4, paddingHorizontal: spacing.small, borderBottomWidth: 1, borderBottomColor: colors.border },
+  tableRowAlt: { backgroundColor: colors.surfaceMuted },
   tableCell: { paddingRight: spacing.small, justifyContent: 'center' },
-  cellText: { fontSize: 12 },
-  statusChip: { borderRadius: 10, paddingHorizontal: spacing.small, paddingVertical: 2, alignSelf: 'flex-start' },
-  statusChipText: { fontSize: 11, fontWeight: '600' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: spacing.large },
-  modalCard: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.large, width: '100%', maxWidth: 360 },
-  fieldLabel: { fontWeight: '600', fontSize: 13, marginTop: spacing.medium, marginBottom: spacing.small },
-  dateInput: { borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: spacing.small + 4, backgroundColor: colors.background },
-  modalButtonRow: { flexDirection: 'row', gap: spacing.medium, marginTop: spacing.large },
-  modalSecondaryButton: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: colors.divider, borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4 },
-  modalSecondaryButtonText: { color: colors.textSecondary, fontWeight: '600' },
-  modalPrimaryButton: { flex: 1, alignItems: 'center', backgroundColor: colors.primary, borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4 },
+  cellText: { ...textStyles.bodySmall, color: colors.contentPrimary },
+  cellIconRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  cellChip: { borderRadius: 10, borderWidth: 1, paddingHorizontal: spacing.small, paddingVertical: 2, alignSelf: 'flex-start' },
+  cellChipText: { ...textStyles.labelSmall, fontWeight: '600' },
+  dateFields: { gap: spacing.medium },
+  modalButtonRow: { flexDirection: 'row', gap: spacing.medium },
+  modalButton: { flex: 1 },
 });

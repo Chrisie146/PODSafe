@@ -102,7 +102,7 @@ export default function ReportsDesktop() {
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <Text style={textStyles.heading3}>Reports</Text>
+        <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Reports</Text>
         <View style={styles.headerBarActions}>
           <Pressable onPress={loadReport}>
             <Text style={styles.headerBarIcon}>↻</Text>

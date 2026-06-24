@@ -1,10 +1,38 @@
 // expects route.params: { claimId: string }
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import {
+  Alert,
+  Image,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import {
+  AppHeader,
+  AppIcon,
+  AppIconName,
+  AppModal,
+  Card,
+  DangerButton,
+  EmptyState,
+  FormField,
+  IconButton,
+  LoadingState,
+  PrimaryButton,
+  SecondaryButton,
+  StatusChip,
+  StatusChipTone,
+  SuccessButton,
+} from '../../components/ui';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useClaimStore } from '../../stores/useClaimStore';
 import { Claim, ClaimComment, ClaimStatus, claimStatusDisplayText, claimTypeDisplayText } from '../../models/claim';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
 /**
@@ -14,40 +42,22 @@ import { textStyles } from '../../theme/textStyles';
  * approve/reject workflow.
  *
  * Group A responsive-split screen — only the mobile path is ported this pass; the
- * >1000px desktop branch (`claim_details_desktop.dart`) lands in Phase 4. Note that file
- * already has the affected-items field-name fix below — see that bullet.
+ * >1000px desktop branch (`claim_details_desktop.dart`) lands in Phase 4.
  *
  * Deviations from the Flutter source:
- * - Takes only `claimId` via route params. Prefers the live entry from
- *   `useClaimStore.allClaims` (kept fresh by ClaimsDashboard's subscription) and falls
- *   back to a one-time `getClaimById` fetch if not found there (e.g. a direct deep link
- *   with no dashboard subscription active) — same intent as the Dart source's
- *   `provider.claims.firstWhere(..., orElse: () => claim)`, just without requiring the
- *   caller to pass the (possibly stale) full Claim object.
- * - Added `claimRepository.updateClaimStatus()` / `useClaimStore.updateClaimStatus()` +
- *   `updateClaim()` this pass — the approve/reject workflow and the edit-amount path
- *   didn't have a write method yet (only driver-facing `createClaim` existed).
- * - Bug fix: the Dart MOBILE screen's affected-items list reads `item['productName']`,
- *   a field nothing ever writes (every claim-filing path writes `description`) — every
- *   affected item here permanently shows "Unknown Product" in production. The DESKTOP
- *   variant (`claim_details_desktop.dart`) already has the fix (`description ?? productName`);
- *   this port uses that same corrected lookup.
- * - No map library is installed yet (`react-native-maps` is deferred to whenever
- *   live_tracking_screen is tackled), so the GPS location section shows coordinates as
- *   text plus an "Open in Maps" link (`Linking.openURL` to a Google Maps query) instead
- *   of the Dart source's embedded `LocationMapWidget`.
- * - `CachedNetworkImage` becomes RN's built-in `Image` (per the package mapping
- *   decisions — no image-cache library needed for this app's usage).
- * - The overflow menu's "Assign to User"/"Change Priority"/"Export to PDF"/"Close Claim"
- *   stay honest "Coming Soon" placeholders, same as the Dart source (these show a plain
- *   snackbar, not a false success message, so they're not in the same category as the
- *   Copy-Link/Share-via-WhatsApp dead stubs fixed earlier in DeliveryDetails.tsx).
- *   "Download All Evidence" is wired for real via `Linking.openURL`, matching the Dart
- *   source's `url_launcher` calls.
- * - The full-screen photo viewer uses a horizontally paging ScrollView
- *   (`pagingEnabled`) instead of Dart's `PageView` + `InteractiveViewer` — swipeable, but
- *   no pinch-zoom (no gesture/zoom library installed; same degraded-but-honest tradeoff
- *   as DeliveryDetails.tsx's image viewer).
+ * - Takes only `claimId` via route params; prefers the live entry from
+ *   `useClaimStore.allClaims` and falls back to a one-time `getClaimById` fetch.
+ * - Added `updateClaimStatus()`/`updateClaim()` for the approve/reject + edit-amount paths.
+ * - Bug fix: affected-items now read `description ?? productName` (the mobile Dart screen
+ *   read a never-written `productName`, permanently showing "Unknown Product").
+ * - No map library installed → GPS section shows coordinates + an "Open in Maps" link.
+ * - `CachedNetworkImage` → RN `Image`; overflow placeholders stay honest "Coming Soon".
+ * - Full-screen photo viewer is a paging ScrollView (swipe, no pinch-zoom).
+ *
+ * UI/UX refresh (Operations Precision): the custom navy header, emoji status banner,
+ * emoji section/action/evidence/comment glyphs, and bespoke dialogs are replaced with the
+ * shared AppHeader, SVG AppIcon/StatusChip, Card, AppModal, and button primitives.
+ * Semantic tokens only.
  */
 const TABS = ['Details', 'Evidence', 'History', 'Comments'] as const;
 type TabName = (typeof TABS)[number];
@@ -59,13 +69,21 @@ interface ClaimDetailsProps {
 
 const ACTIONABLE_STATUSES: ClaimStatus[] = ['submitted', 'pendingReview', 'pendingApproval'];
 
-const STATUS_BANNER: Record<string, { bg: string; text: string; message: string; icon: string }> = {
-  submitted: { bg: '#BBDEFB', text: '#0D47A1', message: 'New claim awaiting review', icon: '🆕' },
-  pendingReview: { bg: '#FFE0B2', text: '#E65100', message: 'Pending your review', icon: '⏳' },
-  pendingApproval: { bg: '#FFECB3', text: '#FF6F00', message: 'Pending approval', icon: '✔' },
-  approved: { bg: '#C8E6C9', text: '#1B5E20', message: 'Claim approved', icon: '✓' },
-  rejected: { bg: '#FFCDD2', text: '#B71C1C', message: 'Claim rejected', icon: '✕' },
-  resolved: { bg: '#B2DFDB', text: '#004D40', message: 'Claim resolved', icon: '☑' },
+const STATUS_BANNER: Record<string, { tone: StatusChipTone; icon: AppIconName; message: string }> = {
+  submitted: { tone: 'info', icon: 'info', message: 'New claim awaiting review' },
+  pendingReview: { tone: 'warning', icon: 'activity', message: 'Pending your review' },
+  pendingApproval: { tone: 'warning', icon: 'activity', message: 'Pending approval' },
+  approved: { tone: 'success', icon: 'check', message: 'Claim approved' },
+  rejected: { tone: 'error', icon: 'close', message: 'Claim rejected' },
+  resolved: { tone: 'success', icon: 'check', message: 'Claim resolved' },
+};
+
+const BANNER_PALETTE: Record<StatusChipTone, { bg: string; fg: string }> = {
+  neutral: { bg: colors.surfaceMuted, fg: colors.contentSecondary },
+  info: { bg: colors.activeMuted, fg: colors.shell },
+  success: { bg: colors.verifiedMuted, fg: colors.shell },
+  warning: { bg: colors.attentionMuted, fg: colors.contentPrimary },
+  error: { bg: colors.criticalMuted, fg: colors.critical },
 };
 
 function affectedItemName(item: Record<string, unknown>): string {
@@ -243,128 +261,138 @@ export default function ClaimDetails({ route, navigation }: ClaimDetailsProps) {
 
   if (!claim) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
+      <View style={styles.container}>
+        <AppHeader title="Claim" onBack={navigation.goBack} />
+        <LoadingState title="Loading claim" message="Retrieving claim details." />
       </View>
     );
   }
 
-  const banner = STATUS_BANNER[claim.status] ?? { bg: '#EEEEEE', text: '#424242', message: `Status: ${claim.status}`, icon: 'ℹ' };
+  const banner = STATUS_BANNER[claim.status] ?? { tone: 'neutral' as StatusChipTone, icon: 'info' as AppIconName, message: `Status: ${claimStatusDisplayText(claim.status)}` };
+  const bannerPalette = BANNER_PALETTE[banner.tone];
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Pressable onPress={() => navigation.goBack()}>
-          <Text style={styles.headerBarAction}>‹ Back</Text>
-        </Pressable>
-        <Text style={textStyles.heading3}>{claim.id}</Text>
-        <Pressable onPress={() => setShowActions(true)}>
-          <Text style={styles.headerBarAction}>⋮</Text>
-        </Pressable>
-      </View>
+      <AppHeader
+        title={claim.id}
+        onBack={navigation.goBack}
+        right={<IconButton icon="more" accessibilityLabel="Claim actions" onPress={() => setShowActions(true)} />}
+      />
 
-      <View style={[styles.statusBanner, { backgroundColor: banner.bg }]}>
-        <Text style={[styles.statusBannerIcon, { color: banner.text }]}>{banner.icon}</Text>
-        <Text style={[styles.statusBannerText, { color: banner.text }]}>{banner.message}</Text>
+      <View style={[styles.statusBanner, { backgroundColor: bannerPalette.bg }]}>
+        <AppIcon name={banner.icon} size={20} color={bannerPalette.fg} />
+        <Text style={[styles.statusBannerText, { color: bannerPalette.fg }]}>{banner.message}</Text>
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabStrip} contentContainerStyle={styles.tabStripContent}>
         {TABS.map((tab) => (
-          <Pressable key={tab} style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]} onPress={() => setActiveTab(tab)}>
+          <Pressable
+            key={tab}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === tab }}
+            style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]}
+            onPress={() => setActiveTab(tab)}
+          >
             <Text style={[styles.tabButtonText, activeTab === tab && styles.tabButtonTextActive]}>{tab}</Text>
           </Pressable>
         ))}
       </ScrollView>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
-        {activeTab === 'Details' ? <DetailsTab claim={claim} onEditAmount={handleEditAmount} /> : null}
-        {activeTab === 'Evidence' ? (
-          <EvidenceTab claim={claim} onOpenPhoto={(i) => setPhotoViewerIndex(i)} onOpenSignature={() => setShowSignatureViewer(true)} />
-        ) : null}
-        {activeTab === 'History' ? <HistoryTab claim={claim} /> : null}
-        {activeTab === 'Comments' ? null : null}
-      </ScrollView>
-
       {activeTab === 'Comments' ? (
         <CommentsTab claim={claim} commentText={commentText} onChangeComment={setCommentText} onSend={submitComment} />
-      ) : null}
+      ) : (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
+          {activeTab === 'Details' ? <DetailsTab claim={claim} onEditAmount={handleEditAmount} /> : null}
+          {activeTab === 'Evidence' ? (
+            <EvidenceTab claim={claim} onOpenPhoto={(i) => setPhotoViewerIndex(i)} onOpenSignature={() => setShowSignatureViewer(true)} />
+          ) : null}
+          {activeTab === 'History' ? <HistoryTab claim={claim} /> : null}
+        </ScrollView>
+      )}
 
       {canTakeAction && activeTab !== 'Comments' ? (
         <View style={styles.actionButtonsRow}>
-          <Pressable style={[styles.actionButton, styles.rejectButton]} disabled={isSubmitting} onPress={() => setShowReject(true)}>
-            <Text style={styles.actionButtonText}>✕ Reject</Text>
-          </Pressable>
-          <Pressable style={[styles.actionButton, styles.approveButton]} disabled={isSubmitting} onPress={() => setShowApprove(true)}>
-            <Text style={styles.actionButtonText}>✓ Approve</Text>
-          </Pressable>
+          <DangerButton label="Reject" icon="close" style={styles.actionButton} disabled={isSubmitting} onPress={() => setShowReject(true)} />
+          <SuccessButton label="Approve" icon="check" style={styles.actionButton} disabled={isSubmitting} onPress={() => setShowApprove(true)} />
         </View>
       ) : null}
 
       <Modal visible={showActions} transparent animationType="fade" onRequestClose={() => setShowActions(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowActions(false)}>
-          <View style={[styles.actionSheet, shadows.card]}>
-            <ActionRow label="Assign to User" icon="👤" onPress={() => comingSoon('Assign to User')} />
-            <ActionRow label="Change Priority" icon="🚩" onPress={() => comingSoon('Change Priority')} />
-            <ActionRow label="Export to PDF" icon="📄" onPress={() => comingSoon('Export to PDF')} />
-            <ActionRow label="Download All Evidence" icon="⬇" onPress={handleDownloadAllEvidence} />
-            <ActionRow label="Close Claim" icon="🔒" onPress={() => comingSoon('Close Claim')} />
+        <Pressable style={styles.modalBackdrop} accessibilityRole="button" accessibilityLabel="Close actions" onPress={() => setShowActions(false)}>
+          <View style={styles.actionSheet}>
+            <ActionRow label="Assign to User" icon="user" onPress={() => comingSoon('Assign to User')} />
+            <ActionRow label="Change Priority" icon="report" onPress={() => comingSoon('Change Priority')} />
+            <ActionRow label="Export to PDF" icon="file" onPress={() => comingSoon('Export to PDF')} />
+            <ActionRow label="Download All Evidence" icon="download" onPress={handleDownloadAllEvidence} />
+            <ActionRow label="Close Claim" icon="lock" onPress={() => comingSoon('Close Claim')} />
           </View>
         </Pressable>
       </Modal>
 
-      <Modal visible={showEditAmount} transparent animationType="fade" onRequestClose={() => setShowEditAmount(false)}>
-        <View style={styles.modalCenterBackdrop}>
-          <View style={[styles.modalCard, shadows.card]}>
-            <Text style={textStyles.heading3}>Edit Claim Amount</Text>
-            <Text style={styles.modalHint}>Current Amount: R{claim.claimAmount?.toFixed(2) ?? '0.00'}</Text>
-            <TextInput style={styles.modalInput} placeholder="0.00" keyboardType="decimal-pad" value={amountText} onChangeText={setAmountText} />
-            <View style={styles.modalButtonRow}>
-              <Pressable style={styles.modalSecondaryButton} onPress={() => setShowEditAmount(false)}>
-                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.modalPrimaryButton} onPress={submitEditAmount}>
-                <Text style={textStyles.buttonText}>Update Amount</Text>
-              </Pressable>
-            </View>
+      <AppModal
+        visible={showEditAmount}
+        title="Edit claim amount"
+        onClose={() => setShowEditAmount(false)}
+        footer={
+          <View style={styles.modalButtonRow}>
+            <SecondaryButton label="Cancel" style={styles.modalButton} onPress={() => setShowEditAmount(false)} />
+            <PrimaryButton label="Update amount" style={styles.modalButton} onPress={submitEditAmount} />
           </View>
-        </View>
-      </Modal>
+        }
+      >
+        <FormField
+          label="New amount"
+          helperText={`Current amount: R${claim.claimAmount?.toFixed(2) ?? '0.00'}`}
+          placeholder="0.00"
+          keyboardType="decimal-pad"
+          value={amountText}
+          onChangeText={setAmountText}
+        />
+      </AppModal>
 
-      <Modal visible={showApprove} transparent animationType="fade" onRequestClose={() => setShowApprove(false)}>
-        <View style={styles.modalCenterBackdrop}>
-          <View style={[styles.modalCard, shadows.card]}>
-            <Text style={textStyles.heading3}>Approve Claim</Text>
-            <Text style={styles.modalHint}>Approve claim {claim.id}?</Text>
-            <TextInput style={[styles.modalInput, styles.modalTextArea]} placeholder="Add any notes or comments..." multiline value={approveNotes} onChangeText={setApproveNotes} />
-            <View style={styles.modalButtonRow}>
-              <Pressable style={styles.modalSecondaryButton} onPress={() => setShowApprove(false)}>
-                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={[styles.modalPrimaryButton, styles.approveButton]} onPress={submitApprove}>
-                <Text style={textStyles.buttonText}>Approve</Text>
-              </Pressable>
-            </View>
+      <AppModal
+        visible={showApprove}
+        title="Approve claim"
+        onClose={() => setShowApprove(false)}
+        footer={
+          <View style={styles.modalButtonRow}>
+            <SecondaryButton label="Cancel" style={styles.modalButton} onPress={() => setShowApprove(false)} />
+            <SuccessButton label="Approve" style={styles.modalButton} onPress={submitApprove} />
           </View>
-        </View>
-      </Modal>
+        }
+      >
+        <Text style={styles.modalHint}>Approve claim {claim.id}?</Text>
+        <FormField
+          label="Notes (optional)"
+          placeholder="Add any notes or comments…"
+          multiline
+          inputStyle={styles.modalTextArea}
+          value={approveNotes}
+          onChangeText={setApproveNotes}
+        />
+      </AppModal>
 
-      <Modal visible={showReject} transparent animationType="fade" onRequestClose={() => setShowReject(false)}>
-        <View style={styles.modalCenterBackdrop}>
-          <View style={[styles.modalCard, shadows.card]}>
-            <Text style={textStyles.heading3}>Reject Claim</Text>
-            <Text style={styles.modalHint}>Reject claim {claim.id}?</Text>
-            <TextInput style={[styles.modalInput, styles.modalTextArea]} placeholder="Provide a reason for rejection..." multiline value={rejectReason} onChangeText={setRejectReason} />
-            <View style={styles.modalButtonRow}>
-              <Pressable style={styles.modalSecondaryButton} onPress={() => setShowReject(false)}>
-                <Text style={styles.modalSecondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={[styles.modalPrimaryButton, styles.rejectButton]} onPress={submitReject}>
-                <Text style={textStyles.buttonText}>Reject</Text>
-              </Pressable>
-            </View>
+      <AppModal
+        visible={showReject}
+        title="Reject claim"
+        onClose={() => setShowReject(false)}
+        footer={
+          <View style={styles.modalButtonRow}>
+            <SecondaryButton label="Cancel" style={styles.modalButton} onPress={() => setShowReject(false)} />
+            <DangerButton label="Reject" style={styles.modalButton} onPress={submitReject} />
           </View>
-        </View>
-      </Modal>
+        }
+      >
+        <Text style={styles.modalHint}>Reject claim {claim.id}?</Text>
+        <FormField
+          label="Reason"
+          placeholder="Provide a reason for rejection…"
+          multiline
+          inputStyle={styles.modalTextArea}
+          value={rejectReason}
+          onChangeText={setRejectReason}
+        />
+      </AppModal>
 
       <Modal visible={photoViewerIndex != null} animationType="fade" onRequestClose={() => setPhotoViewerIndex(null)}>
         <View style={styles.photoViewerContainer}>
@@ -372,9 +400,7 @@ export default function ClaimDetails({ route, navigation }: ClaimDetailsProps) {
             <Text style={styles.photoViewerTitle}>
               Photo {(photoViewerIndex ?? 0) + 1} of {claim.photoUrls.length}
             </Text>
-            <Pressable onPress={() => setPhotoViewerIndex(null)}>
-              <Text style={styles.photoViewerClose}>✕</Text>
-            </Pressable>
+            <IconButton icon="close" accessibilityLabel="Close photo viewer" color={colors.onPrimary} onPress={() => setPhotoViewerIndex(null)} />
           </View>
           <ScrollView
             horizontal
@@ -395,176 +421,154 @@ export default function ClaimDetails({ route, navigation }: ClaimDetailsProps) {
         </View>
       </Modal>
 
-      <Modal visible={showSignatureViewer} transparent animationType="fade" onRequestClose={() => setShowSignatureViewer(false)}>
-        <View style={styles.modalCenterBackdrop}>
-          <View style={[styles.modalCard, shadows.card]}>
-            <View style={styles.signatureViewerHeaderRow}>
-              <Text style={textStyles.heading3}>Customer Signature</Text>
-              <Pressable onPress={() => setShowSignatureViewer(false)}>
-                <Text style={styles.photoViewerClose}>✕</Text>
-              </Pressable>
-            </View>
-            {claim.customerSignatureUrl ? <Image source={{ uri: claim.customerSignatureUrl }} style={styles.signatureViewerImage} resizeMode="contain" /> : null}
-          </View>
-        </View>
-      </Modal>
+      <AppModal visible={showSignatureViewer} title="Customer signature" onClose={() => setShowSignatureViewer(false)}>
+        {claim.customerSignatureUrl ? <Image source={{ uri: claim.customerSignatureUrl }} style={styles.signatureViewerImage} resizeMode="contain" /> : null}
+      </AppModal>
     </View>
   );
 }
 
 function DetailsTab({ claim, onEditAmount }: { claim: Claim; onEditAmount: () => void }) {
-    return (
-      <>
-        <Section title="Claim Information" icon="🧾">
-          <InfoRow label="Claim ID" value={claim.id} />
-          <InfoRow label="Type" value={claimTypeDisplayText(claim.type)} />
-          <InfoRow label="Status" value={claimStatusDisplayText(claim.status)} />
-          <InfoRow label="Priority" value={capitalize(claim.priority)} />
-          <InfoRow label="Filed" value={claim.createdAt.toLocaleString()} />
-          {claim.claimAmount != null ? (
-            <View style={styles.amountRow}>
-              <Text style={styles.infoLabel}>Claimed Amount:</Text>
-              <Text style={styles.amountValue}>R{claim.claimAmount.toFixed(2)}</Text>
-              <Pressable style={styles.editAmountButton} onPress={onEditAmount}>
-                <Text style={styles.editAmountButtonText}>✎</Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </Section>
-
-        <Section title="Customer & Delivery" icon="👤">
-          <InfoRow label="Customer" value={claim.customerName} />
-          {claim.customerAccountNumber ? <InfoRow label="Customer ID" value={claim.customerAccountNumber} /> : null}
-          <InfoRow label="Driver" value={claim.driverName} />
-          <InfoRow label="Delivery ID" value={claim.deliveryId} />
-          {claim.invoiceNumber ? <InfoRow label="Invoice" value={claim.invoiceNumber} /> : null}
-        </Section>
-
-        <Section title="Description" icon="📝">
-          <Text style={styles.descriptionText}>{claim.description.length > 0 ? claim.description : 'No description provided'}</Text>
-        </Section>
-
-        {claim.affectedItems.length > 0 ? (
-          <Section title={`Affected Items (${claim.affectedItems.length})`} icon="📦">
-            {claim.affectedItems.map((item, i) => (
-              <View key={i} style={styles.affectedItemCard}>
-                <Text style={styles.affectedItemName}>{affectedItemName(item)}</Text>
-                <Text style={styles.affectedItemQty}>Quantity: {String(item.quantity ?? 'N/A')}</Text>
-              </View>
-            ))}
-          </Section>
-        ) : null}
-
-        {Object.keys(claim.gpsLocation).length > 0 ? (
-          <Section title="Location" icon="📍">
-            <InfoRow label="Coordinates" value={`${claim.gpsLocation.latitude}, ${claim.gpsLocation.longitude}`} />
-            <Pressable
-              style={styles.mapsLinkButton}
-              onPress={() => openInMaps(Number(claim.gpsLocation.latitude), Number(claim.gpsLocation.longitude))}
-            >
-              <Text style={styles.mapsLinkButtonText}>🗺 Open in Maps</Text>
-            </Pressable>
-          </Section>
-        ) : null}
-
-        <Section title="Evidence Quality" icon="✅">
-          <View style={styles.evidenceScoreRow}>
-            <View style={styles.evidenceScoreTrack}>
-              <View
-                style={[
-                  styles.evidenceScoreFill,
-                  {
-                    width: `${(claim.evidenceQualityScore / 10) * 100}%`,
-                    backgroundColor: claim.evidenceQualityScore >= 7 ? colors.success : claim.evidenceQualityScore >= 5 ? colors.warning : colors.error,
-                  },
-                ]}
-              />
-            </View>
-            <Text style={styles.evidenceScoreText}>{claim.evidenceQualityScore}/10</Text>
+  return (
+    <>
+      <Section title="Claim information" icon="clipboard">
+        <InfoRow label="Claim ID" value={claim.id} />
+        <InfoRow label="Type" value={claimTypeDisplayText(claim.type)} />
+        <InfoRow label="Status" value={claimStatusDisplayText(claim.status)} />
+        <InfoRow label="Priority" value={capitalize(claim.priority)} />
+        <InfoRow label="Filed" value={claim.createdAt.toLocaleString()} />
+        {claim.claimAmount != null ? (
+          <View style={styles.amountRow}>
+            <Text style={styles.infoLabel}>Claimed amount:</Text>
+            <Text style={styles.amountValue}>R{claim.claimAmount.toFixed(2)}</Text>
+            <IconButton icon="edit" accessibilityLabel="Edit claim amount" onPress={onEditAmount} />
           </View>
+        ) : null}
+      </Section>
+
+      <Section title="Customer & delivery" icon="user">
+        <InfoRow label="Customer" value={claim.customerName} />
+        {claim.customerAccountNumber ? <InfoRow label="Customer ID" value={claim.customerAccountNumber} /> : null}
+        <InfoRow label="Driver" value={claim.driverName} />
+        <InfoRow label="Delivery ID" value={claim.deliveryId} />
+        {claim.invoiceNumber ? <InfoRow label="Invoice" value={claim.invoiceNumber} /> : null}
+      </Section>
+
+      <Section title="Description" icon="file">
+        <Text style={styles.descriptionText}>{claim.description.length > 0 ? claim.description : 'No description provided'}</Text>
+      </Section>
+
+      {claim.affectedItems.length > 0 ? (
+        <Section title={`Affected items (${claim.affectedItems.length})`} icon="package">
+          {claim.affectedItems.map((item, i) => (
+            <View key={i} style={styles.affectedItemCard}>
+              <Text style={styles.affectedItemName}>{affectedItemName(item)}</Text>
+              <Text style={styles.affectedItemQty}>Quantity: {String(item.quantity ?? 'N/A')}</Text>
+            </View>
+          ))}
         </Section>
-      </>
-    );
-  }
+      ) : null}
+
+      {Object.keys(claim.gpsLocation).length > 0 ? (
+        <Section title="Location" icon="location">
+          <InfoRow label="Coordinates" value={`${claim.gpsLocation.latitude}, ${claim.gpsLocation.longitude}`} />
+          <SecondaryButton
+            label="Open in Maps"
+            icon="map"
+            style={styles.mapsLinkButton}
+            onPress={() => openInMaps(Number(claim.gpsLocation.latitude), Number(claim.gpsLocation.longitude))}
+          />
+        </Section>
+      ) : null}
+
+      <Section title="Evidence quality" icon="shield">
+        <View style={styles.evidenceScoreRow}>
+          <View style={styles.evidenceScoreTrack}>
+            <View
+              style={[
+                styles.evidenceScoreFill,
+                {
+                  width: `${(claim.evidenceQualityScore / 10) * 100}%`,
+                  backgroundColor: claim.evidenceQualityScore >= 7 ? colors.verified : claim.evidenceQualityScore >= 5 ? colors.attention : colors.critical,
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.evidenceScoreText}>{claim.evidenceQualityScore}/10</Text>
+        </View>
+      </Section>
+    </>
+  );
+}
 
 function EvidenceTab({
   claim,
   onOpenPhoto,
   onOpenSignature,
 }: {
-    claim: Claim;
-    onOpenPhoto: (index: number) => void;
-    onOpenSignature: () => void;
-  }) {
-    const hasPhotos = claim.photoUrls.length > 0;
-    const hasSignature = claim.customerSignatureUrl != null;
+  claim: Claim;
+  onOpenPhoto: (index: number) => void;
+  onOpenSignature: () => void;
+}) {
+  const hasPhotos = claim.photoUrls.length > 0;
+  const hasSignature = claim.customerSignatureUrl != null;
 
-    if (!hasPhotos && !hasSignature) {
-      return (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateIcon}>🖼</Text>
-          <Text style={styles.emptyStateText}>No evidence attached</Text>
-        </View>
-      );
-    }
-
-    return (
-      <>
-        {hasPhotos ? (
-          <Section title={`Photos (${claim.photoUrls.length})`} icon="🖼">
-            <View style={styles.photoGrid}>
-              {claim.photoUrls.map((url, i) => (
-                <Pressable key={i} style={styles.photoGridItem} onPress={() => onOpenPhoto(i)}>
-                  <Image source={{ uri: url }} style={styles.photoGridImage} resizeMode="cover" />
-                </Pressable>
-              ))}
-            </View>
-          </Section>
-        ) : null}
-
-        {hasSignature ? (
-          <Section title="Customer Signature" icon="✎">
-            <Pressable style={styles.signaturePreviewBox} onPress={onOpenSignature}>
-              <Image source={{ uri: claim.customerSignatureUrl! }} style={styles.signaturePreviewImage} resizeMode="contain" />
-            </Pressable>
-          </Section>
-        ) : null}
-      </>
-    );
+  if (!hasPhotos && !hasSignature) {
+    return <EmptyState icon="image" title="No evidence attached" message="Photos and signatures captured for this claim will appear here." />;
   }
+
+  return (
+    <>
+      {hasPhotos ? (
+        <Section title={`Photos (${claim.photoUrls.length})`} icon="image">
+          <View style={styles.photoGrid}>
+            {claim.photoUrls.map((url, i) => (
+              <Pressable key={i} accessibilityRole="button" accessibilityLabel={`Open photo ${i + 1}`} style={styles.photoGridItem} onPress={() => onOpenPhoto(i)}>
+                <Image source={{ uri: url }} style={styles.photoGridImage} resizeMode="cover" />
+              </Pressable>
+            ))}
+          </View>
+        </Section>
+      ) : null}
+
+      {hasSignature ? (
+        <Section title="Customer signature" icon="signature">
+          <Pressable accessibilityRole="button" accessibilityLabel="View signature" style={styles.signaturePreviewBox} onPress={onOpenSignature}>
+            <Image source={{ uri: claim.customerSignatureUrl! }} style={styles.signaturePreviewImage} resizeMode="contain" />
+          </Pressable>
+        </Section>
+      ) : null}
+    </>
+  );
+}
 
 function HistoryTab({ claim }: { claim: Claim }) {
-    if (claim.statusHistory.length === 0) {
-      return (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateIcon}>🕓</Text>
-          <Text style={styles.emptyStateText}>No history yet</Text>
-        </View>
-      );
-    }
-
-    return (
-      <>
-        {claim.statusHistory.map((entry, index) => {
-          const isLast = index === claim.statusHistory.length - 1;
-          return (
-            <View key={index} style={styles.historyRow}>
-              <View style={styles.historyTimelineCol}>
-                <View style={[styles.historyDot, isLast && styles.historyDotActive]} />
-                {!isLast ? <View style={styles.historyLine} /> : null}
-              </View>
-              <View style={styles.historyTextBox}>
-                <Text style={[styles.historyStatus, isLast && styles.historyStatusActive]}>{claimStatusDisplayText(entry.status)}</Text>
-                <Text style={styles.historyMeta}>{entry.timestamp.toLocaleString()}</Text>
-                <Text style={styles.historyMeta}>by {entry.userName}</Text>
-                {entry.notes ? <Text style={styles.historyNotes}>{entry.notes}</Text> : null}
-              </View>
-            </View>
-          );
-        })}
-      </>
-    );
+  if (claim.statusHistory.length === 0) {
+    return <EmptyState icon="activity" title="No history yet" message="Status changes for this claim will be recorded here." />;
   }
+
+  return (
+    <>
+      {claim.statusHistory.map((entry, index) => {
+        const isLast = index === claim.statusHistory.length - 1;
+        return (
+          <View key={index} style={styles.historyRow}>
+            <View style={styles.historyTimelineCol}>
+              <View style={[styles.historyDot, isLast && styles.historyDotActive]} />
+              {!isLast ? <View style={styles.historyLine} /> : null}
+            </View>
+            <View style={styles.historyTextBox}>
+              <Text style={[styles.historyStatus, isLast && styles.historyStatusActive]}>{claimStatusDisplayText(entry.status)}</Text>
+              <Text style={styles.historyMeta}>{entry.timestamp.toLocaleString()}</Text>
+              <Text style={styles.historyMeta}>by {entry.userName}</Text>
+              {entry.notes ? <Text style={styles.historyNotes}>{entry.notes}</Text> : null}
+            </View>
+          </View>
+        );
+      })}
+    </>
+  );
+}
 
 function CommentsTab({
   claim,
@@ -572,63 +576,62 @@ function CommentsTab({
   onChangeComment,
   onSend,
 }: {
-    claim: Claim;
-    commentText: string;
-    onChangeComment: (text: string) => void;
-    onSend: () => void;
-  }) {
-    return (
-      <View style={styles.commentsContainer}>
-        {claim.comments.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateIcon}>💬</Text>
-            <Text style={styles.emptyStateText}>No comments yet</Text>
-          </View>
-        ) : (
-          <ScrollView style={styles.commentsList} contentContainerStyle={styles.commentsListContent}>
-            {claim.comments.map((comment) => (
-              <View key={comment.id} style={[styles.commentCard, comment.isInternal ? styles.commentCardInternal : styles.commentCardExternal]}>
-                <View style={styles.commentHeaderRow}>
-                  <View style={[styles.commentAvatar, { backgroundColor: comment.isInternal ? colors.warning : colors.info }]}>
-                    <Text style={styles.commentAvatarText}>{comment.userName.charAt(0).toUpperCase()}</Text>
-                  </View>
-                  <View style={styles.commentHeaderTextBox}>
-                    <View style={styles.commentNameRow}>
-                      <Text style={styles.commentName}>{comment.userName}</Text>
-                      {comment.isInternal ? (
-                        <View style={styles.internalPill}>
-                          <Text style={styles.internalPillText}>INTERNAL</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    <Text style={styles.commentTimestamp}>{comment.timestamp.toLocaleString()}</Text>
-                  </View>
-                </View>
-                <Text style={styles.commentBody}>{comment.comment}</Text>
-              </View>
-            ))}
-          </ScrollView>
-        )}
-
-        <View style={styles.commentInputRow}>
-          <TextInput style={styles.commentInput} placeholder="Add a comment..." multiline value={commentText} onChangeText={onChangeComment} />
-          <Pressable style={styles.commentSendButton} onPress={onSend}>
-            <Text style={styles.commentSendButtonText}>➤</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
-
-function Section({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
+  claim: Claim;
+  commentText: string;
+  onChangeComment: (text: string) => void;
+  onSend: () => void;
+}) {
   return (
-    <View style={styles.section}>
+    <View style={styles.commentsContainer}>
+      {claim.comments.length === 0 ? (
+        <EmptyState icon="message" title="No comments yet" message="Internal notes and comments on this claim will appear here." />
+      ) : (
+        <ScrollView style={styles.commentsList} contentContainerStyle={styles.commentsListContent}>
+          {claim.comments.map((comment) => (
+            <View key={comment.id} style={[styles.commentCard, comment.isInternal ? styles.commentCardInternal : styles.commentCardExternal]}>
+              <View style={styles.commentHeaderRow}>
+                <View style={[styles.commentAvatar, { backgroundColor: comment.isInternal ? colors.attention : colors.active }]}>
+                  <Text style={styles.commentAvatarText}>{comment.userName.charAt(0).toUpperCase()}</Text>
+                </View>
+                <View style={styles.commentHeaderTextBox}>
+                  <View style={styles.commentNameRow}>
+                    <Text style={styles.commentName}>{comment.userName}</Text>
+                    {comment.isInternal ? <StatusChip label="Internal" tone="warning" /> : null}
+                  </View>
+                  <Text style={styles.commentTimestamp}>{comment.timestamp.toLocaleString()}</Text>
+                </View>
+              </View>
+              <Text style={styles.commentBody}>{comment.comment}</Text>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
+      <View style={styles.commentInputRow}>
+        <FormField
+          label="Comment"
+          containerStyle={styles.commentInput}
+          placeholder="Add a comment…"
+          multiline
+          inputStyle={styles.commentInputText}
+          value={commentText}
+          onChangeText={onChangeComment}
+        />
+        <IconButton icon="arrowRight" accessibilityLabel="Send comment" color={colors.shell} onPress={onSend} />
+      </View>
+    </View>
+  );
+}
+
+function Section({ title, icon, children }: { title: string; icon: AppIconName; children: React.ReactNode }) {
+  return (
+    <Card style={styles.section}>
       <View style={styles.sectionHeaderRow}>
-        <Text style={styles.sectionIcon}>{icon}</Text>
+        <AppIcon name={icon} size={18} color={colors.shell} />
         <Text style={styles.sectionTitle}>{title}</Text>
       </View>
       {children}
-    </View>
+    </Card>
   );
 }
 
@@ -641,122 +644,90 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ActionRow({ label, icon, onPress }: { label: string; icon: string; onPress: () => void }) {
+function ActionRow({ label, icon, onPress }: { label: string; icon: AppIconName; onPress: () => void }) {
   return (
-    <Pressable style={styles.actionRow} onPress={onPress}>
-      <Text style={styles.actionRowIcon}>{icon}</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.actionRow} onPress={onPress}>
+      <AppIcon name={icon} size={20} color={colors.contentSecondary} />
       <Text style={styles.actionRowLabel}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.medium,
-    paddingVertical: spacing.medium,
-  },
-  headerBarAction: { color: colors.white, fontSize: 16, fontWeight: '600' },
-  statusBanner: { flexDirection: 'row', alignItems: 'center', padding: spacing.medium },
-  statusBannerIcon: { fontSize: 18, marginRight: spacing.small + 4 },
-  statusBannerText: { fontSize: 15, fontWeight: '600' },
-  tabStrip: { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  container: { flex: 1, backgroundColor: colors.canvas },
+  statusBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, paddingHorizontal: spacing.medium, paddingVertical: spacing.small + 4 },
+  statusBannerText: { ...textStyles.label },
+  tabStrip: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, flexGrow: 0 },
   tabStripContent: { paddingHorizontal: spacing.medium, gap: spacing.small },
   tabButton: { paddingHorizontal: spacing.medium, paddingVertical: spacing.medium, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabButtonActive: { borderBottomColor: colors.primary },
-  tabButtonText: { color: colors.textSecondary, fontWeight: '600' },
-  tabButtonTextActive: { color: colors.primary },
+  tabButtonActive: { borderBottomColor: colors.shell },
+  tabButtonText: { ...textStyles.label, color: colors.contentSecondary },
+  tabButtonTextActive: { color: colors.shell },
   content: { flex: 1 },
-  contentInner: { padding: spacing.medium, paddingBottom: spacing.xLarge },
-  section: { marginBottom: spacing.large },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.small + 4 },
-  sectionIcon: { fontSize: 18, marginRight: spacing.small, color: colors.primary },
-  sectionTitle: { fontSize: 17, fontWeight: 'bold', color: colors.primary },
+  contentInner: { padding: spacing.medium, paddingBottom: spacing.xLarge, gap: spacing.medium },
+  section: { marginBottom: spacing.medium },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, marginBottom: spacing.small + 4 },
+  sectionTitle: { ...textStyles.heading3, color: colors.shell },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.small + 4 },
-  infoLabel: { width: 120, fontWeight: '600', color: colors.textSecondary },
-  infoValue: { flex: 1, color: colors.textPrimary },
-  amountRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.small + 4 },
-  amountValue: { fontSize: 16, fontWeight: '500', marginRight: spacing.medium },
-  editAmountButton: { backgroundColor: `${colors.primary}1A`, borderRadius: 4, padding: spacing.small - 2 },
-  editAmountButtonText: { color: colors.primary, fontSize: 14 },
-  descriptionText: { fontSize: 14, lineHeight: 21 },
-  affectedItemCard: { backgroundColor: colors.card, borderRadius: radii.borderRadius, borderWidth: 1, borderColor: colors.divider, padding: spacing.small + 4, marginBottom: spacing.small },
-  affectedItemName: { fontWeight: '600', fontSize: 14 },
-  affectedItemQty: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-  mapsLinkButton: { alignSelf: 'flex-start', marginTop: spacing.small + 4, backgroundColor: `${colors.primary}1A`, borderRadius: radii.borderRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small + 4 },
-  mapsLinkButtonText: { color: colors.primary, fontWeight: '600' },
+  infoLabel: { width: 120, ...textStyles.bodySmall, fontWeight: '600', color: colors.contentSecondary },
+  infoValue: { flex: 1, ...textStyles.bodyMedium, color: colors.contentPrimary },
+  amountRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, marginBottom: spacing.small },
+  amountValue: { ...textStyles.bodyLarge, fontWeight: '600', flex: 1 },
+  descriptionText: { ...textStyles.bodyMedium, lineHeight: 21 },
+  affectedItemCard: { backgroundColor: colors.surfaceMuted, borderRadius: radii.inputRadius, borderWidth: 1, borderColor: colors.border, padding: spacing.small + 4, marginBottom: spacing.small },
+  affectedItemName: { ...textStyles.label },
+  affectedItemQty: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: spacing.xs },
+  mapsLinkButton: { alignSelf: 'flex-start', marginTop: spacing.small + 4 },
   evidenceScoreRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.medium },
-  evidenceScoreTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: colors.divider, overflow: 'hidden' },
+  evidenceScoreTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: colors.surfaceMuted, overflow: 'hidden' },
   evidenceScoreFill: { height: 10, borderRadius: 5 },
-  evidenceScoreText: { fontWeight: 'bold', fontSize: 16 },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xLarge },
-  emptyStateIcon: { fontSize: 56, opacity: 0.3 },
-  emptyStateText: { fontSize: 16, color: colors.textSecondary, marginTop: spacing.medium },
+  evidenceScoreText: { ...textStyles.label, fontWeight: '700' },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small + 4 },
-  photoGridItem: { width: '47%', aspectRatio: 1, borderRadius: radii.borderRadius, overflow: 'hidden', backgroundColor: colors.divider },
+  photoGridItem: { width: '47%', aspectRatio: 1, borderRadius: radii.inputRadius, overflow: 'hidden', backgroundColor: colors.surfaceMuted },
   photoGridImage: { width: '100%', height: '100%' },
-  signaturePreviewBox: { height: 200, borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, backgroundColor: colors.white, overflow: 'hidden' },
+  signaturePreviewBox: { height: 200, borderWidth: 1, borderColor: colors.border, borderRadius: radii.inputRadius, backgroundColor: colors.surface, overflow: 'hidden' },
   signaturePreviewImage: { width: '100%', height: '100%' },
   historyRow: { flexDirection: 'row', marginBottom: spacing.small },
   historyTimelineCol: { alignItems: 'center', width: 40 },
-  historyDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: colors.divider },
-  historyDotActive: { backgroundColor: colors.primary },
-  historyLine: { width: 2, flex: 1, backgroundColor: colors.divider, marginTop: 4 },
+  historyDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: colors.border },
+  historyDotActive: { backgroundColor: colors.shell },
+  historyLine: { width: 2, flex: 1, backgroundColor: colors.border, marginTop: 4 },
   historyTextBox: { flex: 1, paddingBottom: spacing.medium },
-  historyStatus: { fontSize: 15, fontWeight: '600' },
-  historyStatusActive: { color: colors.primary, fontWeight: 'bold' },
-  historyMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  historyNotes: { fontSize: 13, backgroundColor: colors.card, borderRadius: radii.borderRadius, padding: spacing.small + 4, marginTop: spacing.small },
+  historyStatus: { ...textStyles.label },
+  historyStatusActive: { color: colors.shell, fontWeight: '700' },
+  historyMeta: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: 2 },
+  historyNotes: { ...textStyles.bodySmall, color: colors.contentPrimary, backgroundColor: colors.surfaceMuted, borderRadius: radii.inputRadius, padding: spacing.small + 4, marginTop: spacing.small },
   commentsContainer: { flex: 1 },
   commentsList: { flex: 1 },
   commentsListContent: { padding: spacing.medium },
-  commentCard: { borderRadius: radii.borderRadius, borderWidth: 1, padding: spacing.small + 4, marginBottom: spacing.medium },
-  commentCardInternal: { backgroundColor: `${colors.warning}14`, borderColor: `${colors.warning}66` },
-  commentCardExternal: { backgroundColor: `${colors.info}14`, borderColor: `${colors.info}66` },
+  commentCard: { borderRadius: radii.cardRadius, borderWidth: 1, padding: spacing.small + 4, marginBottom: spacing.medium },
+  commentCardInternal: { backgroundColor: colors.attentionMuted, borderColor: colors.attention },
+  commentCardExternal: { backgroundColor: colors.activeMuted, borderColor: colors.active },
   commentHeaderRow: { flexDirection: 'row', alignItems: 'center' },
   commentAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: spacing.small + 4 },
-  commentAvatarText: { color: colors.white, fontWeight: 'bold' },
+  commentAvatarText: { color: colors.onPrimary, fontWeight: '700' },
   commentHeaderTextBox: { flex: 1 },
   commentNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small },
-  commentName: { fontWeight: '600', fontSize: 14 },
-  internalPill: { backgroundColor: colors.warning, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 },
-  internalPillText: { fontSize: 10, fontWeight: 'bold', color: colors.white },
-  commentTimestamp: { fontSize: 11, color: colors.textSecondary },
-  commentBody: { fontSize: 14, marginTop: spacing.small },
-  commentInputRow: { flexDirection: 'row', alignItems: 'flex-end', padding: spacing.medium, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.divider, gap: spacing.small },
-  commentInput: { flex: 1, borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: spacing.small + 4, maxHeight: 100, backgroundColor: colors.background },
-  commentSendButton: { backgroundColor: colors.primary, borderRadius: 20, width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  commentSendButtonText: { color: colors.white, fontSize: 16 },
-  actionButtonsRow: { flexDirection: 'row', gap: spacing.medium, padding: spacing.medium, backgroundColor: colors.card, borderTopWidth: 1, borderTopColor: colors.divider },
-  actionButton: { flex: 1, alignItems: 'center', borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4 },
-  approveButton: { backgroundColor: colors.success },
-  rejectButton: { backgroundColor: colors.error },
-  actionButtonText: { color: colors.white, fontWeight: 'bold' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalCenterBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: spacing.large },
-  actionSheet: { backgroundColor: colors.card, borderTopLeftRadius: radii.cardRadius, borderTopRightRadius: radii.cardRadius, padding: spacing.medium },
-  actionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.medium },
-  actionRowIcon: { fontSize: 18, marginRight: spacing.medium, width: 24, textAlign: 'center' },
-  actionRowLabel: { fontSize: 15, fontWeight: '600' },
-  modalCard: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.large, width: '100%', maxWidth: 420, maxHeight: '80%' },
-  modalHint: { color: colors.textSecondary, marginTop: spacing.small, marginBottom: spacing.medium },
-  modalInput: { borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: spacing.small + 4, backgroundColor: colors.background },
+  commentName: { ...textStyles.label },
+  commentTimestamp: { ...textStyles.bodySmall, color: colors.contentSecondary },
+  commentBody: { ...textStyles.bodyMedium, marginTop: spacing.small },
+  commentInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.small, padding: spacing.medium, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
+  commentInput: { flex: 1 },
+  commentInputText: { maxHeight: 100, minHeight: 48, textAlignVertical: 'top' },
+  actionButtonsRow: { flexDirection: 'row', gap: spacing.medium, padding: spacing.medium, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
+  actionButton: { flex: 1 },
+  modalBackdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: 'flex-end' },
+  actionSheet: { backgroundColor: colors.surface, borderTopLeftRadius: radii.cardRadius, borderTopRightRadius: radii.cardRadius, padding: spacing.medium },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.medium, paddingVertical: spacing.medium },
+  actionRowLabel: { ...textStyles.label },
+  modalHint: { ...textStyles.bodyMedium, color: colors.contentSecondary, marginBottom: spacing.medium },
   modalTextArea: { minHeight: 80, textAlignVertical: 'top' },
-  modalButtonRow: { flexDirection: 'row', gap: spacing.medium, marginTop: spacing.large },
-  modalSecondaryButton: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: colors.divider, borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4 },
-  modalSecondaryButtonText: { color: colors.textSecondary, fontWeight: '600' },
-  modalPrimaryButton: { flex: 1, alignItems: 'center', backgroundColor: colors.primary, borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4 },
-  photoViewerContainer: { flex: 1, backgroundColor: 'black' },
-  photoViewerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.medium },
-  photoViewerTitle: { color: colors.white, fontSize: 15, fontWeight: '600' },
-  photoViewerClose: { color: colors.white, fontSize: 22 },
+  modalButtonRow: { flexDirection: 'row', gap: spacing.medium },
+  modalButton: { flex: 1 },
+  photoViewerContainer: { flex: 1, backgroundColor: '#000000' },
+  photoViewerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.medium, paddingVertical: spacing.small },
+  photoViewerTitle: { color: colors.onPrimary, ...textStyles.label },
   photoViewerPage: { alignItems: 'center', justifyContent: 'center' },
   photoViewerImage: { height: '100%' },
-  signatureViewerHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.medium },
   signatureViewerImage: { width: '100%', height: 250 },
 });

@@ -21,7 +21,6 @@ interface ThemeState {
   successColor: string;
   appName: string;
   appLogoUrl?: string;
-  useDarkMode: boolean;
   isLoading: boolean;
 
   loadBrandingSettings: (companyId: string) => Promise<void>;
@@ -31,7 +30,6 @@ interface ThemeState {
   setSuccessColor: (color: string) => void;
   setAppName: (name: string) => void;
   setAppLogoUrl: (url: string | undefined) => void;
-  setDarkMode: (enabled: boolean) => void;
   saveBrandingSettings: (companyId: string, userId: string) => Promise<void>;
   reset: () => void;
 }
@@ -43,7 +41,6 @@ const DEFAULTS = {
   successColor: '#4CAF50',
   appName: 'PODSafe',
   appLogoUrl: undefined as string | undefined,
-  useDarkMode: false,
 };
 
 /** Mirrors Dart's `Color(int.parse(value))` on read: a 32-bit ARGB int as a decimal string. */
@@ -76,7 +73,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         set({
           appName: typeof data.appName === 'string' ? data.appName : DEFAULTS.appName,
           appLogoUrl: typeof data.appLogoUrl === 'string' ? data.appLogoUrl : undefined,
-          useDarkMode: data.useDarkMode === true,
           primaryColor: argbStringToHex(data.primaryColor) ?? DEFAULTS.primaryColor,
           accentColor: argbStringToHex(data.accentColor) ?? DEFAULTS.accentColor,
           warningColor: argbStringToHex(data.warningColor) ?? DEFAULTS.warningColor,
@@ -96,7 +92,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   setSuccessColor: (color) => set({ successColor: color }),
   setAppName: (name) => set({ appName: name }),
   setAppLogoUrl: (url) => set({ appLogoUrl: url }),
-  setDarkMode: (enabled) => set({ useDarkMode: enabled }),
 
   saveBrandingSettings: async (companyId, userId) => {
     const state = get();
@@ -107,7 +102,6 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       accentColor: hexToArgbString(state.accentColor),
       warningColor: hexToArgbString(state.warningColor),
       successColor: hexToArgbString(state.successColor),
-      useDarkMode: state.useDarkMode,
       updatedAt: firestore.FieldValue.serverTimestamp(),
       updatedBy: userId,
     });

@@ -1,86 +1,30 @@
-// expects: no route params. Reads the signed-in driver from useAuthStore. Navigating to
-// a claim's detail screen should pass { claimId: string } (see ClaimDetails.tsx).
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppIcon, Card, EmptyState, ErrorState, LoadingState, Screen, SearchField, StatusChip } from '../../components/ui';
+import { Claim, ClaimStatus, claimStatusDisplayText, claimTypeDisplayText } from '../../models/claim';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useClaimStore } from '../../stores/useClaimStore';
-import { Claim, ClaimStatus, claimStatusDisplayText, claimTypeDisplayText } from '../../models/claim';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, radii, spacing } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
-/**
- * Ported from lib/screens/driver/my_claims_screen.dart. Status filter chips + free-text
- * search are client-side over the driver's own claims, same as the Flutter screen.
- *
- * Deviation: the Flutter screen re-filters claimProvider.claims by driverId again in the
- * widget itself (belt-and-suspenders on top of the provider's own driverIdFilter); since
- * useClaimStore.loadClaimsForDriver already sets driverIdFilter and the subscription is
- * scoped server-side, that redundant client-side filter is not repeated here.
- */
-
-const STATUS_CHIPS: Array<{ label: string; status: ClaimStatus | null }> = [
-  { label: 'All', status: null },
-  { label: 'Submitted', status: 'submitted' },
-  { label: 'Under Review', status: 'pendingReview' },
-  { label: 'Approved', status: 'approved' },
-  { label: 'Rejected', status: 'rejected' },
-  { label: 'Resolved', status: 'resolved' },
+const filters: Array<{ label: string; status: ClaimStatus | null }> = [
+  { label: 'All', status: null }, { label: 'Submitted', status: 'submitted' }, { label: 'Under review', status: 'pendingReview' },
+  { label: 'Approved', status: 'approved' }, { label: 'Rejected', status: 'rejected' }, { label: 'Resolved', status: 'resolved' },
 ];
 
-function statusBadgeColors(status: ClaimStatus): { background: string; text: string } {
-  switch (status) {
-    case 'draft':
-      return { background: '#E0E0E0', text: '#424242' };
-    case 'submitted':
-      return { background: '#BBDEFB', text: '#0D47A1' };
-    case 'pendingReview':
-      return { background: '#FFE0B2', text: '#E65100' };
-    case 'investigating':
-      return { background: '#E1BEE7', text: '#4A148C' };
-    case 'pendingDriverResponse':
-      return { background: '#FFECB3', text: '#FF6F00' };
-    case 'driverResponded':
-      return { background: '#B2DFDB', text: '#004D40' };
-    case 'pendingApproval':
-    case 'pendingSecondApproval':
-    case 'pendingProcessing':
-    case 'processing':
-    case 'pendingFinalReview':
-      return { background: '#C5CAE9', text: '#1A237E' };
-    case 'approved':
-      return { background: '#C8E6C9', text: '#1B5E20' };
-    case 'rejected':
-      return { background: '#FFCDD2', text: '#B71C1C' };
-    case 'resolved':
-      return { background: '#B2DFDB', text: '#004D40' };
-    case 'closed':
-      return { background: '#BDBDBD', text: '#212121' };
-    case 'cancelled':
-      return { background: '#E0E0E0', text: '#616161' };
-    case 'disputed':
-      return { background: '#FFCCBC', text: '#BF360C' };
-    default:
-      return { background: colors.divider, text: colors.textSecondary };
-  }
+function statusTone(status: ClaimStatus): 'neutral' | 'info' | 'success' | 'warning' | 'error' {
+  if (['approved', 'resolved', 'closed'].includes(status)) return 'success';
+  if (['rejected', 'cancelled', 'disputed'].includes(status)) return 'error';
+  if (['submitted', 'pendingReview', 'investigating', 'pendingDriverResponse'].includes(status)) return 'warning';
+  if (['driverResponded', 'pendingApproval', 'pendingSecondApproval', 'pendingProcessing', 'processing', 'pendingFinalReview'].includes(status)) return 'info';
+  return 'neutral';
 }
 
 function formatRelativeDate(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMinutes = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) {
-    if (diffHours === 0) {
-      return diffMinutes <= 0 ? 'Just now' : `${diffMinutes}m ago`;
-    }
-    return `${diffHours}h ago`;
-  } else if (diffDays === 1) {
-    return 'Yesterday';
-  } else if (diffDays < 7) {
-    return `${diffDays} days ago`;
-  }
+  const days = Math.floor((Date.now() - date.getTime()) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
@@ -95,194 +39,56 @@ export default function MyClaims({ navigation }: { navigation: { navigate: (scre
   const initialize = useClaimStore((s) => s.initialize);
   const loadClaimsForDriver = useClaimStore((s) => s.loadClaimsForDriver);
   const companyId = useClaimStore((s) => s.companyId);
-
   const [searchText, setSearchText] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadClaims = useCallback(async () => {
     if (!currentUser) return;
-    if (!companyId) {
-      await initialize(currentUser.companyId);
-    }
-    loadClaimsForDriver(currentUser.id);
-  }, [currentUser, companyId, initialize, loadClaimsForDriver]);
+    if (!companyId) await initialize(currentUser.companyId);
+    await loadClaimsForDriver(currentUser.id);
+  }, [companyId, currentUser, initialize, loadClaimsForDriver]);
 
-  useEffect(() => {
-    loadClaims();
-  }, [loadClaims]);
-
-  const handleRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-    await loadClaims();
-    setIsRefreshing(false);
-  }, [loadClaims]);
-
-  const handleSearchChange = (text: string) => {
-    setSearchText(text);
-    setSearchQuery(text.length > 0 ? text : null);
-  };
-
+  useEffect(() => { loadClaims(); }, [loadClaims]);
+  const refresh = useCallback(async () => { setIsRefreshing(true); await loadClaims(); setIsRefreshing(false); }, [loadClaims]);
+  const changeSearch = (value: string) => { setSearchText(value); setSearchQuery(value || null); };
   const sortedClaims = [...claims].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
+  if (isLoading && claims.length === 0) return <Screen><LoadingState title="Loading claims" /></Screen>;
+  if (errorMessage) return <Screen><ErrorState title="Claims could not be loaded" message={errorMessage} onAction={loadClaims} /></Screen>;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.filterBar}>
-        <Text style={[textStyles.bodySmall, styles.filterLabel]}>Filter by Status</Text>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={STATUS_CHIPS}
-          keyExtractor={(item) => item.label}
-          renderItem={({ item }) => (
-            <StatusChip label={item.label} selected={statusFilter === item.status} onPress={() => setStatusFilter(item.status)} />
-          )}
-          contentContainerStyle={styles.chipRow}
-        />
+    <Screen contentContainerStyle={styles.screen}>
+      <View style={styles.toolbar}>
+        <Text style={textStyles.heading2}>My claims</Text>
+        <SearchField value={searchText} onChangeText={changeSearch} placeholder="Search claim, customer, or description" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+          {filters.map((filter) => {
+            const selected = statusFilter === filter.status;
+            return <Pressable key={filter.label} accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={`Filter claims by ${filter.label}`} onPress={() => setStatusFilter(filter.status)} style={({ pressed }) => [styles.filter, selected && styles.filterSelected, pressed && styles.filterPressed]}><Text style={[styles.filterText, selected && styles.filterTextSelected]}>{filter.label}</Text></Pressable>;
+          })}
+        </ScrollView>
       </View>
-
-      <View style={styles.searchBar}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by claim ID, customer, or description..."
-          value={searchText}
-          onChangeText={handleSearchChange}
-        />
-      </View>
-
-      {isLoading && claims.length === 0 ? (
-        <ActivityIndicator style={styles.loadingIndicator} color={colors.primary} />
-      ) : errorMessage ? (
-        <View style={styles.centered}>
-          <Text style={styles.errorText}>{errorMessage}</Text>
-          <Pressable style={styles.retryButton} onPress={loadClaims}>
-            <Text style={textStyles.buttonText}>Retry</Text>
-          </Pressable>
-        </View>
-      ) : sortedClaims.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={textStyles.bodyLarge}>{statusFilter || searchText ? 'No claims match your filters' : 'No claims filed yet'}</Text>
-          <Text style={[textStyles.bodySmall, styles.emptySubtext]}>
-            {statusFilter || searchText ? 'Try adjusting your filters' : 'File a claim from any delivery'}
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={sortedClaims}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} colors={[colors.primary]} />}
-          renderItem={({ item }) => (
-            <ClaimCard claim={item} onPress={() => navigation.navigate('ClaimDetails', { claimId: item.id })} />
-          )}
-        />
-      )}
-    </View>
-  );
-}
-
-function StatusChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
-  return (
-    <Pressable style={[styles.chip, selected && styles.chipSelected]} onPress={onPress}>
-      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
-    </Pressable>
+      <FlatList
+        data={sortedClaims}
+        keyExtractor={(claim) => claim.id}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} colors={[colors.active]} />}
+        ListHeaderComponent={<Text style={[textStyles.heading3, styles.count]}>{sortedClaims.length} claim{sortedClaims.length === 1 ? '' : 's'}</Text>}
+        ListEmptyComponent={<EmptyState title={statusFilter || searchText ? 'No matching claims' : 'No claims filed'} message={statusFilter || searchText ? 'Adjust the search or status filter to see more results.' : 'You can report an issue from an assigned delivery.'} icon="report" />}
+        renderItem={({ item }) => <ClaimCard claim={item} onPress={() => navigation.navigate('ClaimDetails', { claimId: item.id })} />}
+      />
+    </Screen>
   );
 }
 
 function ClaimCard({ claim, onPress }: { claim: Claim; onPress: () => void }) {
-  const badge = statusBadgeColors(claim.status);
-
-  return (
-    <Pressable style={styles.card} onPress={onPress}>
-      <View style={styles.cardHeaderRow}>
-        <View style={styles.cardHeaderText}>
-          <Text style={[textStyles.heading3, styles.invoiceText]}>{claim.invoiceNumber ?? claim.id}</Text>
-          <Text style={textStyles.bodyMedium}>{claimTypeDisplayText(claim.type)}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: badge.background }]}>
-          <Text style={[styles.statusBadgeText, { color: badge.text }]}>{claimStatusDisplayText(claim.status)}</Text>
-        </View>
-      </View>
-
-      <InfoRow label="Customer" value={claim.customerName} />
-      <InfoRow label="Filed" value={formatRelativeDate(claim.createdAt)} />
-      {claim.description ? <InfoRow label="Description" value={claim.description} /> : null}
-
-      <View style={styles.metaRow}>
-        {claim.photoUrls.length > 0 ? (
-          <Text style={styles.metaText}>
-            {claim.photoUrls.length} photo{claim.photoUrls.length > 1 ? 's' : ''}
-          </Text>
-        ) : null}
-        {claim.customerSignatureUrl ? <Text style={styles.metaText}>Signature</Text> : null}
-        {claim.affectedItems.length > 0 ? (
-          <Text style={styles.metaText}>
-            {claim.affectedItems.length} item{claim.affectedItems.length > 1 ? 's' : ''}
-          </Text>
-        ) : null}
-      </View>
-    </Pressable>
-  );
+  return <Pressable accessibilityRole="button" accessibilityLabel={`View claim ${claim.invoiceNumber ?? claim.id}`} onPress={onPress} style={({ pressed }) => pressed && styles.pressed}><Card style={styles.card}><View style={styles.cardHeader}><View style={styles.cardCopy}><Text style={textStyles.heading3}>{claim.invoiceNumber ?? claim.id}</Text><Text style={textStyles.bodyMedium}>{claimTypeDisplayText(claim.type)}</Text></View><StatusChip label={claimStatusDisplayText(claim.status)} tone={statusTone(claim.status)} /></View><Info label="Customer" value={claim.customerName} /><Info label="Filed" value={formatRelativeDate(claim.createdAt)} />{claim.description ? <Info label="Description" value={claim.description} /> : null}<View style={styles.evidence}><AppIcon name="image" size={16} color={colors.contentSecondary} /><Text style={textStyles.bodySmall}>{claim.photoUrls.length} photo{claim.photoUrls.length === 1 ? '' : 's'}</Text>{claim.customerSignatureUrl ? <><AppIcon name="signature" size={16} color={colors.contentSecondary} /><Text style={textStyles.bodySmall}>Signature attached</Text></> : null}</View></Card></Pressable>;
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <Text style={[textStyles.bodySmall, styles.infoRow]} numberOfLines={2}>
-      <Text style={styles.infoLabel}>{label}: </Text>
-      {value}
-    </Text>
-  );
-}
+function Info({ label, value }: { label: string; value: string }) { return <View style={styles.info}><Text style={textStyles.labelSmall}>{label}</Text><Text numberOfLines={2} style={textStyles.bodyMedium}>{value}</Text></View>; }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  filterBar: { backgroundColor: colors.card, padding: spacing.medium },
-  filterLabel: { fontWeight: '600', marginBottom: spacing.small },
-  chipRow: { gap: spacing.small },
-  chip: {
-    borderRadius: radii.borderRadius,
-    paddingHorizontal: spacing.small + 4,
-    paddingVertical: 6,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.divider,
-  },
-  chipSelected: { backgroundColor: `${colors.primary}33`, borderColor: colors.primary },
-  chipText: { fontSize: 13, color: colors.textSecondary },
-  chipTextSelected: { color: colors.primary, fontWeight: '600' },
-  searchBar: { padding: spacing.medium, paddingTop: spacing.small },
-  searchInput: {
-    backgroundColor: colors.card,
-    borderRadius: radii.borderRadius,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    paddingHorizontal: spacing.medium,
-    paddingVertical: spacing.small + 2,
-  },
-  loadingIndicator: { marginTop: spacing.xLarge },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.large },
-  errorText: { color: colors.error, textAlign: 'center', marginBottom: spacing.medium },
-  retryButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radii.buttonRadius,
-    paddingHorizontal: spacing.large,
-    paddingVertical: spacing.small + 4,
-  },
-  emptySubtext: { marginTop: spacing.small },
-  listContent: { padding: spacing.medium },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radii.cardRadius,
-    padding: spacing.medium,
-    marginBottom: spacing.medium,
-    ...shadows.card,
-  },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.small + 4 },
-  cardHeaderText: { flex: 1 },
-  invoiceText: { color: colors.primary },
-  statusBadge: { borderRadius: 16, paddingHorizontal: spacing.small + 4, paddingVertical: 6 },
-  statusBadgeText: { fontSize: 12, fontWeight: '600' },
-  infoRow: { marginBottom: spacing.small / 2 },
-  infoLabel: { fontWeight: '600', color: colors.textSecondary },
-  metaRow: { flexDirection: 'row', gap: spacing.medium, marginTop: spacing.small },
-  metaText: { fontSize: 12, color: colors.textSecondary },
+  screen: { paddingHorizontal: 0 }, toolbar: { gap: spacing.small, padding: spacing.medium }, filters: { gap: spacing.small, paddingRight: spacing.medium },
+  filter: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.inputRadius, borderWidth: 1, justifyContent: 'center', minHeight: 48, paddingHorizontal: spacing.medium }, filterSelected: { backgroundColor: colors.shell, borderColor: colors.shell }, filterPressed: { opacity: 0.84 }, filterText: textStyles.label, filterTextSelected: { color: colors.onPrimary },
+  list: { flexGrow: 1, padding: spacing.medium }, count: { marginBottom: spacing.medium }, card: { gap: spacing.small, marginBottom: spacing.medium }, pressed: { opacity: 0.84 }, cardHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.small, justifyContent: 'space-between' }, cardCopy: { flex: 1, gap: spacing.xs }, info: { gap: spacing.xs }, evidence: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs },
 });

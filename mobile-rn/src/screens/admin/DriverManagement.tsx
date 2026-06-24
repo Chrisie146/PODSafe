@@ -1,299 +1,431 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { AdminShell } from '../../components/admin/AdminShell';
+import {
+  AppIcon,
+  AppIconName,
+  Card,
+  EmptyState,
+  LoadingState,
+  PrimaryButton,
+  SearchField,
+  SecondaryButton,
+  StatusChip,
+  SuccessButton,
+} from '../../components/ui';
+import { AppUser, ApprovalStatus } from '../../models/user';
+import { AuthRepository } from '../../repositories/authRepository';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUserManagementStore } from '../../stores/useUserManagementStore';
-import { AuthRepository } from '../../repositories/authRepository';
-import { AppUser, ApprovalStatus } from '../../models/user';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
-/**
- * Ported from the MOBILE layout of lib/screens/admin/driver_management_screen.dart
- * (`DriverManagementMobile`, verified against source on 2026-06-22) — 3-tab
- * (Approved/Pending/Rejected) driver list with search, quick approve/reject actions on
- * pending cards, and an "Add Driver" FAB.
- *
- * Group A responsive-split screen — only the mobile path is ported this pass; the
- * >1000px desktop branch lands in Phase 4.
- *
- * Deviations from the Flutter source:
- * - Subscribes to all 3 approval-status tabs simultaneously via 3 independent
- *   `authRepository.subscribeToUsersByCompany()` calls (extended this pass with
- *   `approvalStatus`/`orderByCreatedAtDesc` filters), matching Flutter's `TabBarView`
- *   which builds and keeps all tab children mounted (and their StreamBuilders live) at
- *   once, not lazily per-tab. Uses `AuthRepository` directly rather than
- *   `useUserManagementStore`'s `users`/`subscribeForCompany` (a single-list shape that
- *   doesn't fit this screen's three-simultaneous-lists need) — same precedent as
- *   ClaimsDashboard.tsx instantiating `DeliveryRepository` directly for a per-card need
- *   the shared delivery store doesn't cover.
- * - Approve/Reject quick actions reuse `useUserManagementStore.updateUser()` (a
- *   full-document write via the existing `AppUser` already held in the list, since the
- *   live subscription returns full `AppUser` objects, not raw maps) instead of a
- *   hand-rolled targeted Firestore `.update()` — same end state (approvalStatus,
- *   isActive, approvedBy, approvedAt all get set), no new repository method needed.
- * - Tab bar is a custom Pressable strip (house convention), not a tab-bar library.
- * - "Add Driver" navigates to a `CreateDriver` route that doesn't exist yet —
- *   create_driver_screen.dart is explicitly blocked on Phase 5's `createUser` callable,
- *   same forward-reference pattern as DriverDetails.tsx's Edit button.
- */
-const TABS: { key: ApprovalStatus; label: string; icon: string }[] = [
-  { key: 'approved', label: 'Approved', icon: '✓' },
-  { key: 'pending', label: 'Pending', icon: '⏳' },
-  { key: 'rejected', label: 'Rejected', icon: '✕' },
+const TABS: Array<{ key: ApprovalStatus; label: string; icon: AppIconName }> = [
+  { key: 'approved', label: 'Approved', icon: 'check' },
+  { key: 'pending', label: 'Pending', icon: 'activity' },
+  { key: 'rejected', label: 'Rejected', icon: 'alert' },
 ];
-
-interface DriverManagementProps {
-  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void };
-}
 
 const authRepository = new AuthRepository();
 
-function getInitials(name: string): string {
+interface DriverManagementProps {
+  navigation: {
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+    goBack: () => void;
+  };
+}
+
+function initials(name: string): string {
   const parts = name.trim().split(' ').filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0][0].toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  return parts.length < 2
+    ? parts[0]?.[0]?.toUpperCase() ?? '?'
+    : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-function statusColor(status: ApprovalStatus): string {
-  switch (status) {
-    case 'approved':
-      return colors.success;
-    case 'pending':
-      return colors.warning;
-    case 'rejected':
-      return colors.error;
-  }
+function tone(status: ApprovalStatus): 'success' | 'warning' | 'error' {
+  return status === 'approved'
+    ? 'success'
+    : status === 'pending'
+    ? 'warning'
+    : 'error';
 }
 
-function formatRelativeDate(date: Date): string {
-  const diffDays = Math.floor((Date.now() - date.getTime()) / 86400000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays} days ago`;
-  return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+function relativeDate(date: Date): string {
+  const days = Math.floor((Date.now() - date.getTime()) / 86400000);
+  if (days === 0) return 'Registered today';
+  if (days === 1) return 'Registered yesterday';
+  if (days < 7) return `Registered ${days} days ago`;
+  return `Registered ${date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })}`;
 }
 
-export default function DriverManagement({ navigation }: DriverManagementProps) {
-  const currentUser = useAuthStore((s) => s.currentUser);
-  const updateUser = useUserManagementStore((s) => s.updateUser);
+export default function DriverManagement({
+  navigation,
+}: DriverManagementProps) {
+  const currentUser = useAuthStore(state => state.currentUser);
+  const signOut = useAuthStore(state => state.signOut);
+  const updateUser = useUserManagementStore(state => state.updateUser);
 
+  const handleSignOut = () => {
+    Alert.alert('Sign out', 'Sign out of this administration workspace?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+    ]);
+  };
   const [activeTab, setActiveTab] = useState<ApprovalStatus>('approved');
   const [searchQuery, setSearchQuery] = useState('');
-  const [driversByStatus, setDriversByStatus] = useState<Record<ApprovalStatus, AppUser[] | null>>({
-    approved: null,
-    pending: null,
-    rejected: null,
-  });
+  const [driversByStatus, setDriversByStatus] = useState<
+    Record<ApprovalStatus, AppUser[] | null>
+  >({ approved: null, pending: null, rejected: null });
 
   useEffect(() => {
     if (!currentUser) return;
-
     const unsubscribes = TABS.map(({ key }) =>
       authRepository.subscribeToUsersByCompany(
         currentUser.companyId,
-        (users) => setDriversByStatus((prev) => ({ ...prev, [key]: users })),
-        () => setDriversByStatus((prev) => ({ ...prev, [key]: [] })),
+        users =>
+          setDriversByStatus(previous => ({ ...previous, [key]: users })),
+        () => setDriversByStatus(previous => ({ ...previous, [key]: [] })),
         { role: 'driver', approvalStatus: key, orderByCreatedAtDesc: true },
       ),
     );
-
-    return () => unsubscribes.forEach((unsub) => unsub());
+    return () => unsubscribes.forEach(unsubscribe => unsubscribe());
   }, [currentUser]);
 
-  const handleApprove = async (driver: AppUser) => {
+  const approve = async (driver: AppUser) => {
     if (!currentUser) return;
     try {
-      await updateUser({ ...driver, approvalStatus: 'approved', isActive: true, approvedBy: currentUser.id, approvedAt: new Date() });
-      Alert.alert('Success', `${driver.fullName} has been approved`);
-    } catch (e) {
-      Alert.alert('Error', `Error approving driver: ${(e as Error).message}`);
+      await updateUser({
+        ...driver,
+        approvalStatus: 'approved',
+        isActive: true,
+        approvedBy: currentUser.id,
+        approvedAt: new Date(),
+      });
+      Alert.alert(
+        'Driver approved',
+        `${driver.fullName} can now access delivery work.`,
+      );
+    } catch (error) {
+      Alert.alert('Unable to approve driver', (error as Error).message);
     }
   };
 
-  const handleReject = (driver: AppUser) => {
-    Alert.alert('Reject Driver', `Are you sure you want to reject ${driver.fullName}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reject',
-        style: 'destructive',
-        onPress: async () => {
-          if (!currentUser) return;
-          try {
-            await updateUser({ ...driver, approvalStatus: 'rejected', isActive: false, approvedBy: currentUser.id, approvedAt: new Date() });
-            Alert.alert('Rejected', `${driver.fullName} has been rejected`);
-          } catch (e) {
-            Alert.alert('Error', `Error rejecting driver: ${(e as Error).message}`);
-          }
+  const reject = (driver: AppUser) =>
+    Alert.alert(
+      'Reject driver',
+      `Reject ${driver.fullName}'s driver approval?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            if (!currentUser) return;
+            try {
+              await updateUser({
+                ...driver,
+                approvalStatus: 'rejected',
+                isActive: false,
+                approvedBy: currentUser.id,
+                approvedAt: new Date(),
+              });
+              Alert.alert(
+                'Driver rejected',
+                `${driver.fullName} has been notified.`,
+              );
+            } catch (error) {
+              Alert.alert('Unable to reject driver', (error as Error).message);
+            }
+          },
         },
-      },
-    ]);
-  };
+      ],
+    );
 
-  const activeDrivers = driversByStatus[activeTab];
-  const q = searchQuery.trim().toLowerCase();
-  const filteredDrivers = activeDrivers?.filter((d) => q.length === 0 || d.fullName.toLowerCase().includes(q) || d.email.toLowerCase().includes(q)) ?? null;
+  const drivers = driversByStatus[activeTab];
+  const query = searchQuery.trim().toLowerCase();
+  const filteredDrivers =
+    drivers?.filter(
+      driver =>
+        !query ||
+        `${driver.fullName} ${driver.email} ${driver.phoneNumber ?? ''}`
+          .toLowerCase()
+          .includes(query),
+    ) ?? null;
+  const emptyTitle = query
+    ? 'No matching drivers'
+    : activeTab === 'approved'
+    ? 'No approved drivers'
+    : activeTab === 'pending'
+    ? 'No pending approvals'
+    : 'No rejected drivers';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Text style={textStyles.heading2}>Driver Management</Text>
-      </View>
-
-      <View style={styles.tabStrip}>
-        {TABS.map((tab) => (
-          <Pressable key={tab.key} style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]} onPress={() => setActiveTab(tab.key)}>
-            <Text style={[styles.tabButtonIcon, activeTab === tab.key && styles.tabButtonTextActive]}>{tab.icon}</Text>
-            <Text style={[styles.tabButtonText, activeTab === tab.key && styles.tabButtonTextActive]}>{tab.label}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.searchBox}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput style={styles.searchInput} placeholder="Search by name or email..." value={searchQuery} onChangeText={setSearchQuery} />
-        {searchQuery.length > 0 ? (
-          <Pressable onPress={() => setSearchQuery('')}>
-            <Text style={styles.searchClear}>✕</Text>
-          </Pressable>
-        ) : null}
-      </View>
-
-      {filteredDrivers === null ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
+    <AdminShell
+      activeNav="drivers"
+      title="Drivers"
+      userName={currentUser?.fullName}
+      onNavigate={screen => navigation.navigate(screen)}
+      onLogout={handleSignOut}
+    >
+      <View style={styles.body}>
+        <View style={styles.intro}>
+          <View>
+            <Text style={textStyles.heading2}>Driver management</Text>
+            <Text style={textStyles.bodySmall}>
+              Review driver accounts and approve delivery access.
+            </Text>
+          </View>
+          <StatusChip
+            label={`${drivers?.length ?? 0} ${activeTab}`}
+            tone={tone(activeTab)}
+            icon={TABS.find(tab => tab.key === activeTab)?.icon}
+          />
         </View>
-      ) : filteredDrivers.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={styles.emptyIcon}>👥</Text>
-          <Text style={styles.emptyText}>
-            {searchQuery.length > 0
-              ? 'No matching drivers'
-              : activeTab === 'approved'
-                ? 'No approved drivers'
-                : activeTab === 'pending'
-                  ? 'No pending approvals'
-                  : 'No rejected drivers'}
-          </Text>
-          {searchQuery.length === 0 ? <Text style={styles.emptyHint}>Tap + to add a new driver</Text> : null}
+        <View accessibilityRole="tablist" style={styles.tabs}>
+          {TABS.map(tab => (
+            <Pressable
+              key={tab.key}
+              accessibilityRole="tab"
+              accessibilityLabel={`${tab.label} drivers`}
+              accessibilityState={{ selected: activeTab === tab.key }}
+              onPress={() => setActiveTab(tab.key)}
+              style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+            >
+              <AppIcon
+                name={tab.icon}
+                size={18}
+                color={
+                  activeTab === tab.key
+                    ? colors.onPrimary
+                    : colors.contentSecondary
+                }
+              />
+              <Text
+                style={[
+                  textStyles.labelSmall,
+                  activeTab === tab.key && styles.tabActiveText,
+                ]}
+              >
+                {tab.label}
+              </Text>
+            </Pressable>
+          ))}
         </View>
-      ) : (
-        <FlatList
-          data={filteredDrivers}
-          keyExtractor={(driver) => driver.id}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <DriverCard
-              driver={item}
-              onPress={() => navigation.navigate('DriverDetails', { driverId: item.id })}
-              onApprove={() => handleApprove(item)}
-              onReject={() => handleReject(item)}
+        <SearchField
+          accessibilityLabel="Search drivers"
+          placeholder="Search by name or email"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          containerStyle={styles.search}
+        />
+        <View style={styles.listArea}>
+          {filteredDrivers === null ? (
+            <LoadingState
+              title="Loading drivers"
+              message="Retrieving driver accounts."
+            />
+          ) : filteredDrivers.length === 0 ? (
+            <EmptyState
+              title={emptyTitle}
+              message={
+                query
+                  ? 'Try a different name or email address.'
+                  : activeTab === 'approved'
+                  ? 'Approve a pending driver or add a new driver to begin.'
+                  : 'Driver accounts matching this status will appear here.'
+              }
+              icon="users"
+            />
+          ) : (
+            <FlatList
+              data={filteredDrivers}
+              keyExtractor={driver => driver.id}
+              contentContainerStyle={styles.list}
+              renderItem={({ item }) => (
+                <DriverCard
+                  driver={item}
+                  onPress={() =>
+                    navigation.navigate('DriverDetails', { driverId: item.id })
+                  }
+                  onApprove={() => approve(item)}
+                  onReject={() => reject(item)}
+                />
+              )}
             />
           )}
+        </View>
+        <PrimaryButton
+          label="Add driver"
+          icon="plus"
+          style={styles.addDriver}
+          onPress={() => navigation.navigate('CreateDriver')}
         />
-      )}
-
-      <Pressable style={styles.fab} onPress={() => navigation.navigate('CreateDriver')}>
-        <Text style={styles.fabIcon}>＋</Text>
-        <Text style={styles.fabLabel}>Add Driver</Text>
-      </Pressable>
-    </View>
+      </View>
+    </AdminShell>
   );
 }
 
-function DriverCard({ driver, onPress, onApprove, onReject }: { driver: AppUser; onPress: () => void; onApprove: () => void; onReject: () => void }) {
-  const color = statusColor(driver.approvalStatus ?? 'approved');
-
+function DriverCard({
+  driver,
+  onPress,
+  onApprove,
+  onReject,
+}: {
+  driver: AppUser;
+  onPress: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const status = driver.approvalStatus ?? 'approved';
+  const statusTone = tone(status);
+  const avatarColor =
+    statusTone === 'success'
+      ? colors.verified
+      : statusTone === 'warning'
+      ? colors.attention
+      : colors.critical;
   return (
-    <View style={[styles.card, shadows.card]}>
-      <Pressable style={styles.cardTopRow} onPress={onPress}>
-        <View style={[styles.avatar, { backgroundColor: `${color}1A` }]}>
-          <Text style={[styles.avatarText, { color }]}>{getInitials(driver.fullName)}</Text>
+    <Card padding="none" style={styles.driverCard}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${driver.fullName}`}
+        onPress={onPress}
+        style={styles.driverMain}
+      >
+        <View style={[styles.avatar, { backgroundColor: `${avatarColor}22` }]}>
+          <Text style={[textStyles.label, { color: avatarColor }]}>
+            {initials(driver.fullName)}
+          </Text>
         </View>
-        <View style={styles.cardTextBox}>
-          <View style={styles.cardNameRow}>
-            <Text style={styles.cardName} numberOfLines={1}>
+        <View style={styles.driverCopy}>
+          <View style={styles.driverTitle}>
+            <Text numberOfLines={1} style={textStyles.label}>
               {driver.fullName}
             </Text>
-            <View style={[styles.statusPill, { backgroundColor: color }]}>
-              <Text style={styles.statusPillText}>{(driver.approvalStatus ?? 'approved').toUpperCase()}</Text>
-            </View>
+            <StatusChip label={status} tone={statusTone} />
           </View>
-          <Text style={styles.cardMeta} numberOfLines={1}>
-            ✉ {driver.email}
+          <Detail icon="message" value={driver.email} />
+          <Detail icon="phone" value={driver.phoneNumber} />
+          <Detail icon="vehicle" value={driver.vehicleInfo} />
+          <Text style={textStyles.bodySmall}>
+            {relativeDate(driver.createdAt)}
           </Text>
-          {driver.phoneNumber ? <Text style={styles.cardMeta}>☏ {driver.phoneNumber}</Text> : null}
-          {driver.licenseNumber ? <Text style={styles.cardMeta}>License: {driver.licenseNumber}</Text> : null}
-          {driver.vehicleInfo ? (
-            <Text style={styles.cardMeta} numberOfLines={1}>
-              🚚 {driver.vehicleInfo}
-            </Text>
-          ) : null}
-          <Text style={styles.cardMetaSmall}>Registered: {formatRelativeDate(driver.createdAt)}</Text>
         </View>
+        <AppIcon
+          name="chevronRight"
+          size={20}
+          color={colors.contentSecondary}
+        />
       </Pressable>
-
-      {driver.approvalStatus === 'pending' ? (
-        <View style={styles.cardActionsRow}>
-          <Pressable style={styles.rejectButton} onPress={onReject}>
-            <Text style={styles.rejectButtonText}>✕ Reject</Text>
-          </Pressable>
-          <Pressable style={styles.approveButton} onPress={onApprove}>
-            <Text style={styles.approveButtonText}>✓ Approve</Text>
-          </Pressable>
+      {status === 'pending' ? (
+        <View style={styles.driverActions}>
+          <SecondaryButton
+            label="Reject"
+            icon="alert"
+            style={styles.actionButton}
+            onPress={onReject}
+          />
+          <SuccessButton
+            label="Approve"
+            icon="check"
+            style={styles.actionButton}
+            onPress={onApprove}
+          />
         </View>
       ) : null}
-    </View>
+    </Card>
   );
+}
+
+function Detail({
+  icon,
+  value,
+}: {
+  icon: 'message' | 'phone' | 'vehicle';
+  value?: string;
+}) {
+  return value ? (
+    <View style={styles.detail}>
+      <AppIcon name={icon} size={15} color={colors.contentSecondary} />
+      <Text numberOfLines={1} style={textStyles.bodySmall}>
+        {value}
+      </Text>
+    </View>
+  ) : null;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.large },
-  headerBar: { backgroundColor: colors.primary, paddingHorizontal: spacing.large, paddingVertical: spacing.medium },
-  tabStrip: { flexDirection: 'row', backgroundColor: colors.primary },
-  tabButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.small, paddingVertical: spacing.medium, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabButtonActive: { borderBottomColor: colors.white },
-  tabButtonIcon: { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
-  tabButtonText: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.7)' },
-  tabButtonTextActive: { color: colors.white },
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, margin: spacing.medium, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4 },
-  searchIcon: { marginRight: spacing.small },
-  searchInput: { flex: 1, paddingVertical: spacing.small + 4 },
-  searchClear: { color: colors.textSecondary, padding: spacing.small },
-  emptyIcon: { fontSize: 56, opacity: 0.3 },
-  emptyText: { fontSize: 17, fontWeight: '600', color: colors.textSecondary, marginTop: spacing.medium },
-  emptyHint: { fontSize: 13, color: colors.textSecondary, marginTop: spacing.small },
-  listContent: { padding: spacing.medium, paddingBottom: 96 },
-  card: { backgroundColor: colors.card, borderRadius: radii.cardRadius, marginBottom: spacing.medium, overflow: 'hidden' },
-  cardTopRow: { flexDirection: 'row', padding: spacing.medium },
-  avatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginRight: spacing.medium },
-  avatarText: { fontSize: 18, fontWeight: 'bold' },
-  cardTextBox: { flex: 1 },
-  cardNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.small },
-  cardName: { flex: 1, fontSize: 16, fontWeight: '600' },
-  statusPill: { borderRadius: 12, paddingHorizontal: spacing.small + 4, paddingVertical: 4 },
-  statusPillText: { color: colors.white, fontSize: 11, fontWeight: 'bold' },
-  cardMeta: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
-  cardMetaSmall: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-  cardActionsRow: { flexDirection: 'row', gap: spacing.medium, padding: spacing.small + 4, backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.divider },
-  rejectButton: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: colors.error, borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4 },
-  rejectButtonText: { color: colors.error, fontWeight: '600' },
-  approveButton: { flex: 1, alignItems: 'center', backgroundColor: colors.success, borderRadius: radii.buttonRadius, paddingVertical: spacing.small + 4 },
-  approveButtonText: { color: colors.white, fontWeight: '600' },
-  fab: {
-    position: 'absolute',
-    right: spacing.large,
-    bottom: spacing.large,
+  body: { flex: 1, padding: spacing.medium },
+  intro: {
+    alignItems: 'flex-start',
     flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.small,
-    backgroundColor: colors.primary,
-    borderRadius: 28,
-    paddingHorizontal: spacing.large,
-    paddingVertical: spacing.medium,
-    ...shadows.button,
+    justifyContent: 'space-between',
+    marginBottom: spacing.large,
   },
-  fabIcon: { color: colors.white, fontSize: 16, fontWeight: 'bold' },
-  fabLabel: { color: colors.white, fontWeight: '600' },
+  tabs: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.medium },
+  tab: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.xs,
+  },
+  tabActive: { backgroundColor: colors.shell, borderColor: colors.shell },
+  tabActiveText: { color: colors.onPrimary },
+  search: { marginBottom: spacing.medium },
+  listArea: { flex: 1 },
+  list: { gap: spacing.small, paddingBottom: 76 },
+  driverCard: { overflow: 'hidden' },
+  driverMain: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.small,
+    padding: spacing.medium,
+  },
+  avatar: {
+    alignItems: 'center',
+    borderRadius: 24,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  driverCopy: { flex: 1, gap: spacing.xs, minWidth: 0 },
+  driverTitle: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.small,
+    justifyContent: 'space-between',
+  },
+  detail: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
+  driverActions: {
+    borderTopColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.small,
+    padding: spacing.small,
+  },
+  actionButton: { flex: 1 },
+  addDriver: {
+    bottom: spacing.medium,
+    position: 'absolute',
+    right: spacing.medium,
+  },
 });

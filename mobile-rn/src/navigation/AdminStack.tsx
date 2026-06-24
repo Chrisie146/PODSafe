@@ -2,7 +2,6 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AbaserveImport from '../screens/admin/AbaserveImport';
 import AdminDashboard from '../screens/admin/AdminDashboard';
-import AdminDashboardDesktop from '../screens/admin/AdminDashboardDesktop';
 import AdminSettings from '../screens/admin/AdminSettings';
 import AnalyticsDashboard from '../screens/admin/AnalyticsDashboard';
 import AnalyticsDashboardDesktop from '../screens/admin/AnalyticsDashboardDesktop';
@@ -38,6 +37,7 @@ import UploadEvidenceForm from '../screens/admin/UploadEvidenceForm';
 import UserManagement from '../screens/admin/UserManagement';
 import VehicleManagement from '../screens/admin/VehicleManagement';
 import VehicleManagementDesktop from '../screens/admin/VehicleManagementDesktop';
+import UiFoundationPreview from '../screens/developer/UiFoundationPreview';
 import { colors } from '../theme/tokens';
 
 export type AdminStackParamList = {
@@ -79,6 +79,7 @@ export type AdminStackParamList = {
   PodDetails: { deliveryId: string };
   VehicleManagement: undefined;
   VehicleManagementDesktop: undefined;
+  UiFoundationPreview: undefined;
 };
 
 const Stack = createNativeStackNavigator<AdminStackParamList>();
@@ -87,77 +88,199 @@ export default function AdminStack() {
   return (
     <Stack.Navigator
       initialRouteName="AdminDashboard"
-      screenOptions={{ headerTintColor: colors.white, headerStyle: { backgroundColor: colors.primary } }}
+      screenOptions={{
+        headerTintColor: colors.white,
+        headerStyle: { backgroundColor: colors.primary },
+      }}
     >
       <Stack.Screen name="AdminDashboard" options={{ headerShown: false }}>
         {({ navigation }) => <AdminDashboard navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="AdminDashboardDesktop" options={{ headerShown: false }}>
-        {({ navigation }) => <AdminDashboardDesktop navigation={navigation} />}
+      <Stack.Screen
+        name="AdminDashboardDesktop"
+        options={{ headerShown: false }}
+      >
+        {({ navigation }) => <AdminDashboard navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="AbaserveImport" component={AbaserveImport} options={{ title: 'Import from ABServe' }} />
-      <Stack.Screen name="AnalyticsDashboard" component={AnalyticsDashboard} options={{ title: 'Analytics' }} />
-      <Stack.Screen name="AnalyticsDashboardDesktop" options={{ headerShown: false }}>
-        {({ navigation }) => <AnalyticsDashboardDesktop navigation={navigation} />}
+      <Stack.Screen
+        name="AbaserveImport"
+        component={AbaserveImport}
+        options={{ title: 'Import from ABServe' }}
+      />
+      <Stack.Screen name="AnalyticsDashboard" options={{ headerShown: false }}>
+        {({ navigation }) => <AnalyticsDashboard navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="BcSettings" component={BcSettings} options={{ title: 'Business Central' }} />
-      <Stack.Screen name="BulkItemCreation" component={BulkItemCreation} options={{ title: 'Bulk Item Creation' }} />
-      <Stack.Screen name="ChatListDesktop" component={ChatListDesktop} options={{ headerShown: false }} />
-      <Stack.Screen name="ClaimDetails" component={ClaimDetails} options={{ title: 'Claim Details' }} />
+      <Stack.Screen
+        name="AnalyticsDashboardDesktop"
+        options={{ headerShown: false }}
+      >
+        {({ navigation }) => (
+          <AnalyticsDashboardDesktop navigation={navigation} />
+        )}
+      </Stack.Screen>
+      <Stack.Screen
+        name="BcSettings"
+        component={BcSettings}
+        options={{ title: 'Business Central' }}
+      />
+      <Stack.Screen
+        name="BulkItemCreation"
+        component={BulkItemCreation}
+        options={{ title: 'Bulk Item Creation' }}
+      />
+      <Stack.Screen
+        name="ChatListDesktop"
+        component={ChatListDesktop}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ClaimDetails"
+        component={ClaimDetails}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen name="ClaimDetailsDesktop" options={{ headerShown: false }}>
-        {({ navigation, route }) => <ClaimDetailsDesktop navigation={navigation} route={route} />}
+        {({ navigation, route }) => (
+          <ClaimDetailsDesktop navigation={navigation} route={route} />
+        )}
       </Stack.Screen>
-      <Stack.Screen name="ClaimSettings" component={ClaimSettings} options={{ title: 'Claim Settings' }} />
-      <Stack.Screen name="ClaimSettingsDesktop" component={ClaimSettingsDesktop} options={{ headerShown: false }} />
-      <Stack.Screen name="ClaimsDashboard" options={{ title: 'Claims' }}>
+      <Stack.Screen name="ClaimSettings" options={{ headerShown: false }}>
+        {({ navigation }) => <ClaimSettings navigation={navigation} />}
+      </Stack.Screen>
+      <Stack.Screen
+        name="ClaimSettingsDesktop"
+        component={ClaimSettingsDesktop}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen name="ClaimsDashboard" options={{ headerShown: false }}>
         {({ navigation }) => <ClaimsDashboard navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="ClaimsDashboardDesktop" options={{ headerShown: false }}>
+      <Stack.Screen
+        name="ClaimsDashboardDesktop"
+        options={{ headerShown: false }}
+      >
         {({ navigation }) => <ClaimsDashboardDesktop navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="CustomerCreation" component={CustomerCreation} options={{ title: 'Create Customer' }} />
-      <Stack.Screen name="CustomerImport" component={CustomerImport} options={{ title: 'Import Customers' }} />
-      <Stack.Screen name="DataMigration" component={DataMigration} options={{ title: 'Data Migration' }} />
-      <Stack.Screen name="DeliveryDetails" component={DeliveryDetails} options={{ title: 'Delivery Details' }} />
-      <Stack.Screen name="DeliveryManagement" options={{ title: 'Deliveries' }}>
+      <Stack.Screen
+        name="CustomerCreation"
+        component={CustomerCreation}
+        options={{ title: 'Create Customer' }}
+      />
+      <Stack.Screen
+        name="CustomerImport"
+        component={CustomerImport}
+        options={{ title: 'Import Customers' }}
+      />
+      <Stack.Screen
+        name="DataMigration"
+        component={DataMigration}
+        options={{ title: 'Data Migration' }}
+      />
+      <Stack.Screen
+        name="DeliveryDetails"
+        component={DeliveryDetails}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen name="DeliveryManagement" options={{ headerShown: false }}>
         {({ navigation }) => <DeliveryManagement navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="DeliveryManagementDesktop" options={{ headerShown: false }}>
-        {({ navigation }) => <DeliveryManagementDesktop navigation={navigation} />}
+      <Stack.Screen
+        name="DeliveryManagementDesktop"
+        options={{ headerShown: false }}
+      >
+        {({ navigation }) => (
+          <DeliveryManagementDesktop navigation={navigation} />
+        )}
       </Stack.Screen>
-      <Stack.Screen name="DriverDetails" component={DriverDetails} options={{ title: 'Driver Details' }} />
-      <Stack.Screen name="DriverManagement" options={{ title: 'Drivers' }}>
+      <Stack.Screen
+        name="DriverDetails"
+        component={DriverDetails}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen name="DriverManagement" options={{ headerShown: false }}>
         {({ navigation }) => <DriverManagement navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="DriverManagementDesktop" options={{ headerShown: false }}>
-        {({ navigation }) => <DriverManagementDesktop navigation={navigation} />}
+      <Stack.Screen
+        name="DriverManagementDesktop"
+        options={{ headerShown: false }}
+      >
+        {({ navigation }) => (
+          <DriverManagementDesktop navigation={navigation} />
+        )}
       </Stack.Screen>
-      <Stack.Screen name="ItemCatalogDesktop" component={ItemCatalogDesktop} options={{ headerShown: false }} />
-      <Stack.Screen name="LiveTracking" component={LiveTracking} options={{ title: 'Live Tracking' }} />
-      <Stack.Screen name="PodViewer" options={{ title: 'Proofs of Delivery' }}>
+      <Stack.Screen
+        name="ItemCatalogDesktop"
+        component={ItemCatalogDesktop}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="LiveTracking"
+        component={LiveTracking}
+        options={{ title: 'Live Tracking' }}
+      />
+      <Stack.Screen name="PodViewer" options={{ headerShown: false }}>
         {({ navigation }) => <PodViewer navigation={navigation} />}
       </Stack.Screen>
       <Stack.Screen name="PodViewerDesktop" options={{ headerShown: false }}>
         {({ navigation }) => <PodViewerDesktop navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="Reports" component={Reports} options={{ title: 'Reports' }} />
-      <Stack.Screen name="ReportsDesktop" component={ReportsDesktop} options={{ headerShown: false }} />
-      <Stack.Screen name="UploadEvidence" component={UploadEvidenceForm} options={{ title: 'Upload Evidence' }} />
-      <Stack.Screen name="UserManagement" component={UserManagement} options={{ title: 'Users' }} />
+      <Stack.Screen name="Reports" options={{ headerShown: false }}>
+        {({ navigation }) => <Reports navigation={navigation} />}
+      </Stack.Screen>
+      <Stack.Screen
+        name="ReportsDesktop"
+        component={ReportsDesktop}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="UploadEvidence"
+        component={UploadEvidenceForm}
+        options={{ title: 'Upload Evidence' }}
+      />
+      <Stack.Screen name="UserManagement" options={{ headerShown: false }}>
+        {({ navigation }) => <UserManagement navigation={navigation} />}
+      </Stack.Screen>
 
       <Stack.Screen name="AdminSettings" options={{ title: 'Admin Settings' }}>
         {({ navigation }) => <AdminSettings navigation={navigation} />}
       </Stack.Screen>
-      <Stack.Screen name="BulkUpload" component={BulkUpload} options={{ title: 'Bulk Upload' }} />
-      <Stack.Screen name="CreateDelivery" options={{ title: 'Create Delivery' }}>
-        {({ navigation, route }) => <CreateDelivery navigation={navigation} route={route} />}
+      <Stack.Screen
+        name="BulkUpload"
+        component={BulkUpload}
+        options={{ title: 'Bulk Upload' }}
+      />
+      <Stack.Screen
+        name="CreateDelivery"
+        options={{ title: 'Create Delivery' }}
+      >
+        {({ navigation, route }) => (
+          <CreateDelivery navigation={navigation} route={route} />
+        )}
       </Stack.Screen>
-      <Stack.Screen name="CreateDriver" component={CreateDriver} options={{ title: 'Add Driver' }} />
+      <Stack.Screen
+        name="CreateDriver"
+        component={CreateDriver}
+        options={{ title: 'Add Driver' }}
+      />
       <Stack.Screen name="PodDetails" options={{ headerShown: false }}>
-        {({ navigation, route }) => <PodDetails navigation={navigation} route={route} />}
+        {({ navigation, route }) => (
+          <PodDetails navigation={navigation} route={route} />
+        )}
       </Stack.Screen>
-      <Stack.Screen name="VehicleManagement" component={VehicleManagement} options={{ title: 'Vehicle Management' }} />
-      <Stack.Screen name="VehicleManagementDesktop" component={VehicleManagementDesktop} options={{ title: 'Vehicle Management' }} />
+      <Stack.Screen
+        name="VehicleManagement"
+        component={VehicleManagement}
+        options={{ title: 'Vehicle Management' }}
+      />
+      <Stack.Screen
+        name="VehicleManagementDesktop"
+        component={VehicleManagementDesktop}
+        options={{ title: 'Vehicle Management' }}
+      />
+      <Stack.Screen name="UiFoundationPreview" options={{ headerShown: false }}>
+        {({ navigation }) => (
+          <UiFoundationPreview onBack={() => navigation.goBack()} />
+        )}
+      </Stack.Screen>
     </Stack.Navigator>
   );
 }

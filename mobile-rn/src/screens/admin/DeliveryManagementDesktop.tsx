@@ -341,7 +341,7 @@ export default function DeliveryManagementDesktop({ navigation }: { navigation: 
     <View style={styles.container}>
       <View style={styles.headerBar}>
         <View style={styles.headerBarLeft}>
-          <Text style={textStyles.heading3}>Delivery Management</Text>
+          <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Delivery Management</Text>
           <Text style={styles.desktopBadge}>Desktop</Text>
         </View>
         <View style={styles.headerBarRight}>

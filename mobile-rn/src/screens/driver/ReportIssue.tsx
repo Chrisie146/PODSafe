@@ -1,6 +1,6 @@
 // expects route.params: { deliveryId: string; isAtDeliverySite: boolean }
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Asset, launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import SignatureView, { SignatureViewRef } from 'react-native-signature-canvas';
 import { useAuthStore } from '../../stores/useAuthStore';
@@ -9,8 +9,9 @@ import { useDeliveryStore } from '../../stores/useDeliveryStore';
 import { ApprovalLevel, Claim, ClaimType, CustomField, claimTypeDisplayText } from '../../models/claim';
 import { CustomFieldDefinition } from '../../models/companyClaimSettings';
 import { DeliveryItem } from '../../models/delivery';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
+import { AppIcon, Card, FormField, LoadingState, PrimaryButton, Screen, SecondaryButton } from '../../components/ui';
 
 /**
  * Ported from lib/screens/driver/report_issue_screen.dart.
@@ -86,9 +87,9 @@ export default function ReportIssue({ route, navigation }: ReportIssueProps) {
 
   if (!delivery) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.warning} />
-      </View>
+      <Screen scroll={false}>
+        <LoadingState title="Loading delivery details" />
+      </Screen>
     );
   }
 
@@ -286,31 +287,31 @@ export default function ReportIssue({ route, navigation }: ReportIssueProps) {
 
   if (isSubmitting) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.warning} size="large" />
-        <Text style={[textStyles.bodyMedium, styles.submittingText]}>Submitting claim...</Text>
-      </View>
+      <Screen scroll={false}>
+        <LoadingState title="Submitting claim" />
+      </Screen>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen scroll keyboardAvoiding contentContainerStyle={styles.content}>
       {isAtDeliverySite ? (
         <View style={styles.infoBanner}>
-          <Text style={styles.infoBannerText}>📍 Filing at delivery site - evidence will be stronger</Text>
+          <AppIcon name="location" size={20} color={colors.active} />
+          <Text style={styles.infoBannerText}>Filing at delivery site - evidence will be stronger</Text>
         </View>
       ) : null}
 
-      <View style={styles.card}>
+      <Card style={styles.card}>
         <Text style={textStyles.heading3}>Delivery Information</Text>
         <View style={styles.divider} />
         <InfoRow label="Customer" value={delivery.customerName} />
         <InfoRow label="Address" value={delivery.customerAddress} />
         <InfoRow label="Invoice" value={delivery.invoiceNumber} />
         <InfoRow label="Delivery Date" value={`${delivery.scheduledDate.getDate()}/${delivery.scheduledDate.getMonth() + 1}/${delivery.scheduledDate.getFullYear()}`} />
-      </View>
+      </Card>
 
-      <View style={styles.card}>
+      <Card style={styles.card}>
         <Text style={textStyles.bodyMedium}>Issue Type *</Text>
         <View style={styles.chipWrap}>
           {Array.from(new Set(enabledTypes)).map((type) => (
@@ -325,10 +326,10 @@ export default function ReportIssue({ route, navigation }: ReportIssueProps) {
             />
           ))}
         </View>
-      </View>
+      </Card>
 
       {selectedType && customFields.length > 0 ? (
-        <View style={styles.card}>
+        <Card style={styles.card}>
           {customFields.map((field) => (
             <CustomFieldInput
               key={field.id}
@@ -337,29 +338,40 @@ export default function ReportIssue({ route, navigation }: ReportIssueProps) {
               onChange={(value) => setCustomFieldValue(field.id, value)}
             />
           ))}
-        </View>
+        </Card>
       ) : null}
 
-      <View style={styles.card}>
-        <Text style={textStyles.bodyMedium}>Description *</Text>
-        <TextInput
-          style={styles.descriptionInput}
+      <Card style={styles.card}>
+        <FormField
+          label="Description *"
+          accessibilityLabel="Issue description"
+          accessibilityHint="Describe the delivery issue in detail"
+          inputStyle={styles.multilineInput}
           placeholder="Describe the issue in detail..."
           multiline
           numberOfLines={4}
           value={description}
           onChangeText={setDescription}
         />
-      </View>
+      </Card>
 
-      <View style={styles.card}>
+      <Card style={styles.card}>
         <Text style={textStyles.heading3}>Affected Items</Text>
         <View style={styles.divider} />
         {delivery.items.map((item, index) => {
           const isAffected = affectedItems.some((ai) => ai.description === item.description);
           return (
-            <Pressable key={`${item.description}-${index}`} style={styles.checkboxRow} onPress={() => toggleAffectedItem(item)}>
-              <Text style={styles.checkboxGlyph}>{isAffected ? '☑' : '☐'}</Text>
+            <Pressable
+              key={`${item.description}-${index}`}
+              accessibilityRole="checkbox"
+              accessibilityLabel={`Affected item: ${item.description}`}
+              accessibilityState={{ checked: isAffected }}
+              style={styles.checkboxRow}
+              onPress={() => toggleAffectedItem(item)}
+            >
+              <View style={[styles.checkboxIcon, isAffected && styles.checkboxIconSelected]}>
+                {isAffected ? <AppIcon name="check" size={16} color={colors.onPrimary} /> : null}
+              </View>
               <View style={styles.checkboxTextBox}>
                 <Text style={textStyles.bodyMedium}>{item.description}</Text>
                 <Text style={textStyles.bodySmall}>
@@ -370,9 +382,9 @@ export default function ReportIssue({ route, navigation }: ReportIssueProps) {
             </Pressable>
           );
         })}
-      </View>
+      </Card>
 
-      <View style={styles.card}>
+      <Card style={styles.card}>
         <View style={styles.photosHeaderRow}>
           <Text style={textStyles.heading3}>
             Photos{settings?.photosMandatory ? ' *' : ''}
@@ -390,8 +402,14 @@ export default function ReportIssue({ route, navigation }: ReportIssueProps) {
             {photos.map((photo, index) => (
               <View key={`${photo.uri}-${index}`} style={styles.photoThumb}>
                 <Image source={{ uri: photo.uri }} style={styles.photoThumbImage} resizeMode="cover" />
-                <Pressable style={styles.photoRemoveButton} onPress={() => removePhoto(index)}>
-                  <Text style={styles.photoRemoveText}>✕</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove photo ${index + 1}`}
+                  hitSlop={8}
+                  style={styles.photoRemoveButton}
+                  onPress={() => removePhoto(index)}
+                >
+                  <AppIcon name="close" size={14} color={colors.onPrimary} />
                 </Pressable>
               </View>
             ))}
@@ -399,25 +417,27 @@ export default function ReportIssue({ route, navigation }: ReportIssueProps) {
         ) : null}
 
         <View style={styles.photoButtonRow}>
-          <Pressable
-            style={[styles.photoButton, !canAddMorePhotos && styles.photoButtonDisabled]}
+          <SecondaryButton
+            label="Take photo"
+            icon="camera"
+            accessibilityLabel="Take a photo"
+            style={styles.photoButton}
             disabled={!canAddMorePhotos}
             onPress={() => takePhoto('camera')}
-          >
-            <Text style={styles.photoButtonText}>📷 Take Photo</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.photoButton, !canAddMorePhotos && styles.photoButtonDisabled]}
+          />
+          <SecondaryButton
+            label="Gallery"
+            icon="image"
+            accessibilityLabel="Choose a photo from the gallery"
+            style={styles.photoButton}
             disabled={!canAddMorePhotos}
             onPress={() => takePhoto('gallery')}
-          >
-            <Text style={styles.photoButtonText}>🖼 Gallery</Text>
-          </Pressable>
+          />
         </View>
-      </View>
+      </Card>
 
       {needsSignature ? (
-        <View style={styles.card}>
+        <Card style={styles.card}>
           <Text style={textStyles.heading3}>Customer Acknowledgment *</Text>
           <Text style={styles.photoHint}>Customer signature acknowledging the issue</Text>
           <View style={styles.signatureBox}>
@@ -429,16 +449,12 @@ export default function ReportIssue({ route, navigation }: ReportIssueProps) {
               webStyle=".m-signature-pad--footer { display: none; margin: 0; }"
             />
           </View>
-          <Pressable style={styles.clearSignatureButton} onPress={() => signatureRef.current?.clearSignature()}>
-            <Text style={styles.clearSignatureText}>Clear</Text>
-          </Pressable>
-        </View>
+          <SecondaryButton label="Clear signature" icon="close" onPress={() => signatureRef.current?.clearSignature()} style={styles.clearSignatureButton} />
+        </Card>
       ) : null}
 
-      <Pressable style={styles.submitButton} onPress={handleSubmitPress}>
-        <Text style={textStyles.buttonText}>Submit Claim</Text>
-      </Pressable>
-    </ScrollView>
+      <PrimaryButton label="Submit claim" icon="report" onPress={handleSubmitPress} style={styles.submitButton} />
+    </Screen>
   );
 }
 
@@ -453,7 +469,13 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
-    <Pressable style={[styles.chip, selected && styles.chipSelected]} onPress={onPress}>
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      style={[styles.chip, selected && styles.chipSelected]}
+      onPress={onPress}
+    >
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
     </Pressable>
   );
@@ -473,30 +495,28 @@ function CustomFieldInput({
   switch (field.type) {
     case 'text':
       return (
-        <View style={styles.customFieldRow}>
-          <Text style={textStyles.bodyMedium}>{label}</Text>
-          <TextInput
-            style={styles.customFieldInput}
-            placeholder={field.placeholder}
-            value={(value as string) ?? ''}
-            onChangeText={onChange}
-          />
-          {field.helpText ? <Text style={styles.photoHint}>{field.helpText}</Text> : null}
-        </View>
+        <FormField
+          containerStyle={styles.customFieldRow}
+          label={label}
+          accessibilityLabel={label}
+          helperText={field.helpText}
+          placeholder={field.placeholder}
+          value={(value as string) ?? ''}
+          onChangeText={onChange}
+        />
       );
     case 'number':
       return (
-        <View style={styles.customFieldRow}>
-          <Text style={textStyles.bodyMedium}>{label}</Text>
-          <TextInput
-            style={styles.customFieldInput}
-            placeholder={field.placeholder}
-            keyboardType="numeric"
-            value={value != null ? String(value) : ''}
-            onChangeText={onChange}
-          />
-          {field.helpText ? <Text style={styles.photoHint}>{field.helpText}</Text> : null}
-        </View>
+        <FormField
+          containerStyle={styles.customFieldRow}
+          label={label}
+          accessibilityLabel={label}
+          helperText={field.helpText}
+          placeholder={field.placeholder}
+          keyboardType="numeric"
+          value={value != null ? String(value) : ''}
+          onChangeText={onChange}
+        />
       );
     case 'dropdown':
       return (
@@ -511,8 +531,16 @@ function CustomFieldInput({
       );
     case 'checkbox':
       return (
-        <Pressable style={styles.checkboxRow} onPress={() => onChange(!value)}>
-          <Text style={styles.checkboxGlyph}>{value ? '☑' : '☐'}</Text>
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityLabel={label}
+          accessibilityState={{ checked: Boolean(value) }}
+          style={styles.checkboxRow}
+          onPress={() => onChange(!value)}
+        >
+          <View style={[styles.checkboxIcon, Boolean(value) && styles.checkboxIconSelected]}>
+            {value ? <AppIcon name="check" size={16} color={colors.onPrimary} /> : null}
+          </View>
           <View style={styles.checkboxTextBox}>
             <Text style={textStyles.bodyMedium}>{label}</Text>
             {field.helpText ? <Text style={textStyles.bodySmall}>{field.helpText}</Text> : null}
@@ -525,26 +553,20 @@ function CustomFieldInput({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.medium, paddingBottom: spacing.xLarge },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  submittingText: { marginTop: spacing.medium },
+  content: { paddingBottom: spacing.xxLarge },
   infoBanner: {
-    backgroundColor: `${colors.info}1A`,
+    alignItems: 'center',
+    backgroundColor: colors.activeMuted,
     borderRadius: radii.borderRadius,
     borderWidth: 1,
-    borderColor: `${colors.info}66`,
+    borderColor: colors.active,
+    flexDirection: 'row',
+    gap: spacing.small,
     padding: spacing.medium,
     marginBottom: spacing.medium,
   },
-  infoBannerText: { color: colors.info },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radii.cardRadius,
-    padding: spacing.medium,
-    marginBottom: spacing.medium,
-    ...shadows.card,
-  },
+  infoBannerText: { color: colors.contentPrimary, flex: 1 },
+  card: { gap: spacing.medium, marginBottom: spacing.medium },
   divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.small + 4 },
   infoRow: { flexDirection: 'row', marginBottom: spacing.small },
   infoLabel: { width: 100, fontWeight: 'bold', color: colors.textSecondary },
@@ -558,28 +580,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.divider,
   },
-  chipSelected: { backgroundColor: `${colors.warning}33`, borderColor: colors.warning },
+  chipSelected: { backgroundColor: colors.activeMuted, borderColor: colors.active },
   chipText: { fontSize: 13, color: colors.textSecondary },
-  chipTextSelected: { color: colors.warning, fontWeight: '600' },
-  descriptionInput: {
-    borderWidth: 1,
-    borderColor: colors.divider,
-    borderRadius: radii.borderRadius,
-    padding: spacing.small + 4,
-    marginTop: spacing.small,
-    minHeight: 100,
-    textAlignVertical: 'top',
-  },
+  chipTextSelected: { color: colors.active, fontWeight: '600' },
+  multilineInput: { minHeight: 112, paddingTop: spacing.medium, textAlignVertical: 'top' },
   customFieldRow: { marginBottom: spacing.medium },
-  customFieldInput: {
+  checkboxRow: { alignItems: 'center', flexDirection: 'row', minHeight: 48, paddingVertical: spacing.small },
+  checkboxIcon: {
+    alignItems: 'center',
+    borderColor: colors.border,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: colors.divider,
-    borderRadius: radii.borderRadius,
-    padding: spacing.small + 4,
-    marginTop: spacing.small,
+    height: 24,
+    justifyContent: 'center',
+    marginRight: spacing.small + 4,
+    width: 24,
   },
-  checkboxRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.small },
-  checkboxGlyph: { fontSize: 20, marginRight: spacing.small + 4, color: colors.warning },
+  checkboxIconSelected: { backgroundColor: colors.active, borderColor: colors.active },
   checkboxTextBox: { flex: 1 },
   photosHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   photoCount: { color: colors.textSecondary },
@@ -598,18 +615,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoRemoveText: { color: colors.white, fontSize: 12, fontWeight: 'bold' },
   photoButtonRow: { flexDirection: 'row', gap: spacing.small, marginTop: spacing.medium },
-  photoButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.warning,
-    borderRadius: radii.buttonRadius,
-    paddingVertical: spacing.small + 4,
-    alignItems: 'center',
-  },
-  photoButtonDisabled: { opacity: 0.4 },
-  photoButtonText: { color: colors.warning, fontWeight: '600' },
+  photoButton: { flex: 1 },
   signatureBox: {
     height: 150,
     borderWidth: 1,
@@ -619,13 +626,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   clearSignatureButton: { alignSelf: 'flex-end', marginTop: spacing.small },
-  clearSignatureText: { color: colors.textSecondary },
   submitButton: {
-    backgroundColor: colors.warning,
-    borderRadius: radii.buttonRadius,
-    paddingVertical: spacing.medium,
-    alignItems: 'center',
     marginTop: spacing.small,
-    ...shadows.button,
   },
 });

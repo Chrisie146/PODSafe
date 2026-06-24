@@ -1,41 +1,45 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import {
+  AppHeader,
+  AppIcon,
+  Card,
+  EmptyState,
+  LoadingState,
+  PrimaryButton,
+} from '../../components/ui';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useClaimStore } from '../../stores/useClaimStore';
 import { ClaimType, ALL_CLAIM_TYPES, claimTypeDisplayText } from '../../models/claim';
 import { ClaimWorkflowPreset, ALL_CLAIM_WORKFLOW_PRESETS, claimWorkflowPresetDisplayName, defaultWorkflowFor } from '../../models/companyClaimSettings';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
 /**
  * Ported from the MOBILE layout of lib/screens/admin/claim_settings_screen.dart
  * (`ClaimSettingsMobile`, verified against source on 2026-06-22) — admin configuration
- * screen for company-wide claim policy (claim types, approval workflow, evidence
- * requirements, automation rules, filing/notification features).
+ * screen for company-wide claim policy.
  *
- * This is Group A — a responsive-split screen (`ClaimSettingsScreen` switches to
- * `ClaimSettingsDesktop` above 900px in the Dart source). Per the Phase 3 scope, only the
- * mobile path is ported this pass; the >900px desktop branch lands in Phase 4 as a
- * `useWindowDimensions()` check wrapping this component, same as every other Group A
- * screen.
+ * Group A responsive-split screen — only the mobile path is ported this pass; the >900px
+ * desktop branch lands in Phase 4.
  *
  * Deviations from the Flutter source:
- * - The 6-tab `TabBar`/`TabBarView` becomes a custom horizontal Pressable tab strip +
- *   conditional content (house convention — no tab-bar library installed).
- * - `RadioListTile` (workflow preset) becomes a custom radio row (Pressable + glyph),
- *   `FilterChip` (claim types / auto-approve types) becomes the existing Chip pattern,
- *   `SwitchListTile` becomes a `SwitchRow` helper (same shape as BcSettings.tsx's
- *   SwitchTile).
- * - Settings are loaded once into local form state on first successful fetch (mirroring
- *   the Dart source's initState-only `_loadSettings()` — it never re-syncs from a live
- *   stream while the form is open, so in-progress edits aren't clobbered by unrelated
- *   store updates).
- * - Added `claimRepository.updateCompanySettings()` / `useClaimStore.updateSettings()`
- *   this pass — the admin settings-write path didn't exist yet (only the driver-facing
- *   read path, `getCompanySettings`, had been ported).
+ * - 6-tab `TabBar` → custom horizontal tab strip + conditional content.
+ * - `RadioListTile`/`FilterChip`/`SwitchListTile` → custom radio rows, Chip pattern, and a
+ *   `SwitchRow` helper.
+ * - Settings seed local form state once on first fetch (mirrors the Dart initState-only load).
+ * - Added `updateCompanySettings()`/`updateSettings()` for the admin settings-write path.
+ *
+ * UI/UX refresh (Operations Precision): the custom navy header, emoji save/select/check/
+ * info/warning/radio/tool glyphs are replaced with the shared AppHeader, SVG AppIcon, Card,
+ * EmptyState, and button primitives, plus a fixed bottom save bar. Semantic tokens only.
  */
 const TABS = ['General', 'Claim Types', 'Workflow', 'Requirements', 'Automation', 'Features'] as const;
 type TabName = (typeof TABS)[number];
+
+interface ClaimSettingsProps {
+  navigation: { goBack: () => void };
+}
 
 function workflowPresetDescription(preset: ClaimWorkflowPreset): string {
   switch (preset) {
@@ -50,7 +54,7 @@ function workflowPresetDescription(preset: ClaimWorkflowPreset): string {
   }
 }
 
-export default function ClaimSettings() {
+export default function ClaimSettings({ navigation }: ClaimSettingsProps) {
   const currentUser = useAuthStore((s) => s.currentUser);
   const settings = useClaimStore((s) => s.settings);
   const isLoadingSettings = useClaimStore((s) => s.isLoadingSettings);
@@ -203,8 +207,9 @@ export default function ClaimSettings() {
 
   if (!settings && isLoadingSettings) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
+      <View style={styles.container}>
+        <AppHeader title="Claim settings" onBack={navigation.goBack} />
+        <LoadingState title="Loading settings" message="Retrieving claim policy configuration." />
       </View>
     );
   }
@@ -213,16 +218,17 @@ export default function ClaimSettings() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Text style={textStyles.heading2}>Claim Settings</Text>
-        <Pressable style={styles.saveButton} disabled={isSaving} onPress={handleSave}>
-          {isSaving ? <ActivityIndicator color={colors.white} size="small" /> : <Text style={textStyles.buttonText}>💾 Save</Text>}
-        </Pressable>
-      </View>
+      <AppHeader title="Claim settings" onBack={navigation.goBack} />
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabStrip} contentContainerStyle={styles.tabStripContent}>
         {TABS.map((tab) => (
-          <Pressable key={tab} style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]} onPress={() => setActiveTab(tab)}>
+          <Pressable
+            key={tab}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === tab }}
+            style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]}
+            onPress={() => setActiveTab(tab)}
+          >
             <Text style={[styles.tabButtonText, activeTab === tab && styles.tabButtonTextActive]}>{tab}</Text>
           </Pressable>
         ))}
@@ -231,17 +237,17 @@ export default function ClaimSettings() {
       <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
         {activeTab === 'General' ? (
           <>
-            <SectionHeader title="Claim ID Configuration" subtitle="Customize how claim IDs are generated" />
-            <View style={[styles.card, shadows.card]}>
+            <SectionHeader title="Claim ID configuration" subtitle="Customize how claim IDs are generated" />
+            <Card style={styles.card}>
               <FieldInput
-                label="Claim ID Prefix"
+                label="Claim ID prefix"
                 placeholder="CLM"
                 helperText="Prefix for claim IDs (e.g., CLM, CLAIM, ISS)"
                 value={claimIdPrefix}
                 onChangeText={(v) => setClaimIdPrefix(v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5))}
               />
               <FieldInput
-                label="Starting Number"
+                label="Starting number"
                 placeholder="1"
                 helperText="First claim number (e.g., CLM-0001)"
                 keyboardType="numeric"
@@ -253,13 +259,13 @@ export default function ClaimSettings() {
                   Preview: {claimIdPrefix.length > 0 ? claimIdPrefix : 'CLM'}-{previewNumber}
                 </Text>
               </View>
-            </View>
+            </Card>
 
-            <SectionHeader title="Time Limits" subtitle="Configure deadlines and SLAs" />
-            <View style={[styles.card, shadows.card]}>
+            <SectionHeader title="Time limits" subtitle="Configure deadlines and SLAs" />
+            <Card style={styles.card}>
               <FieldInput label="Default SLA (hours)" placeholder="24" suffix="hours" keyboardType="numeric" value={slaHours} onChangeText={(v) => setSlaHours(v.replace(/\D/g, ''))} />
               <FieldInput
-                label="Filing Deadline (days)"
+                label="Filing deadline (days)"
                 placeholder="Leave empty for no deadline"
                 helperText="Max days after delivery to file claim (optional)"
                 suffix="days"
@@ -267,14 +273,14 @@ export default function ClaimSettings() {
                 value={filingDeadlineDays}
                 onChangeText={(v) => setFilingDeadlineDays(v.replace(/\D/g, ''))}
               />
-            </View>
+            </Card>
           </>
         ) : null}
 
         {activeTab === 'Claim Types' ? (
           <>
-            <SectionHeader title="Enabled Claim Types" subtitle="Select which claim types drivers can submit" />
-            <View style={[styles.card, shadows.card]}>
+            <SectionHeader title="Enabled claim types" subtitle="Select which claim types drivers can submit" />
+            <Card style={styles.card}>
               <Text style={styles.countText}>
                 Selected: {selectedClaimTypes.size} of {ALL_CLAIM_TYPES.length}
               </Text>
@@ -284,25 +290,22 @@ export default function ClaimSettings() {
                 ))}
               </View>
               <View style={styles.buttonRow}>
-                <Pressable style={styles.textButton} onPress={() => setSelectedClaimTypes(new Set(ALL_CLAIM_TYPES))}>
-                  <Text style={styles.textButtonLabel}>☑ Select All</Text>
-                </Pressable>
-                <Pressable style={styles.textButton} onPress={() => setSelectedClaimTypes(new Set())}>
-                  <Text style={styles.textButtonLabel}>☐ Clear All</Text>
-                </Pressable>
+                <TextAction icon="check" label="Select all" onPress={() => setSelectedClaimTypes(new Set(ALL_CLAIM_TYPES))} />
+                <TextAction icon="close" label="Clear all" onPress={() => setSelectedClaimTypes(new Set())} />
               </View>
-            </View>
+            </Card>
             <View style={styles.warningBanner}>
-              <Text style={styles.warningBannerText}>⚠ Drivers can only file claims for enabled types. At least one type must be selected.</Text>
+              <AppIcon name="alert" size={18} color={colors.attention} />
+              <Text style={styles.warningBannerText}>Drivers can only file claims for enabled types. At least one type must be selected.</Text>
             </View>
           </>
         ) : null}
 
         {activeTab === 'Workflow' ? (
           <>
-            <SectionHeader title="Approval Workflow" subtitle="Configure how claims are reviewed and approved" />
-            <View style={[styles.card, shadows.card]}>
-              <Text style={styles.cardTitle}>Workflow Preset</Text>
+            <SectionHeader title="Approval workflow" subtitle="Configure how claims are reviewed and approved" />
+            <Card style={styles.card}>
+              <Text style={styles.cardTitle}>Workflow preset</Text>
               {ALL_CLAIM_WORKFLOW_PRESETS.map((preset) => (
                 <RadioRow
                   key={preset}
@@ -312,11 +315,14 @@ export default function ClaimSettings() {
                   onPress={() => setWorkflowPreset(preset)}
                 />
               ))}
-            </View>
+            </Card>
 
             {workflowPreset !== 'custom' ? (
-              <View style={[styles.card, shadows.card]}>
-                <Text style={styles.cardTitle}>ℹ Workflow Levels</Text>
+              <Card style={styles.card}>
+                <View style={styles.cardTitleRow}>
+                  <AppIcon name="info" size={18} color={colors.shell} />
+                  <Text style={styles.cardTitle}>Workflow levels</Text>
+                </View>
                 {defaultWorkflowFor(workflowPreset).map((role, index) => (
                   <View key={role.role} style={styles.workflowStepRow}>
                     <View style={styles.workflowStepBadge}>
@@ -326,50 +332,52 @@ export default function ClaimSettings() {
                       <Text style={styles.workflowStepTitle}>{role.displayName}</Text>
                       <Text style={styles.workflowStepSubtitle}>SLA: {role.slaHours} hours</Text>
                     </View>
-                    <Text style={styles.workflowStepCheck}>✓</Text>
+                    <AppIcon name="check" size={18} color={colors.verified} />
                   </View>
                 ))}
-              </View>
+              </Card>
             ) : (
-              <View style={[styles.card, shadows.card, styles.emptyStateCard]}>
-                <Text style={styles.emptyStateIcon}>🛠</Text>
-                <Text style={styles.emptyStateTitle}>Custom Workflow Builder</Text>
-                <Text style={styles.emptyStateSubtitle}>Custom workflow configuration will be available in a future update</Text>
-              </View>
+              <Card style={styles.card}>
+                <EmptyState
+                  icon="settings"
+                  title="Custom workflow builder"
+                  message="Custom workflow configuration will be available in a future update."
+                />
+              </Card>
             )}
           </>
         ) : null}
 
         {activeTab === 'Requirements' ? (
           <>
-            <SectionHeader title="Photo Requirements" subtitle="Configure photo evidence requirements" />
-            <View style={[styles.card, shadows.card]}>
-              <SwitchRow title="Photos Mandatory" subtitle="Require at least one photo" value={photosMandatory} onValueChange={setPhotosMandatory} />
-              <SwitchRow title="Require Photo for Immediate Claims" subtitle="Filed at delivery site" value={requirePhotoImmediate} onValueChange={setRequirePhotoImmediate} />
-              <SwitchRow title="Require Photo for Delayed Claims" subtitle="Filed after delivery" value={requirePhotoDelayed} onValueChange={setRequirePhotoDelayed} />
+            <SectionHeader title="Photo requirements" subtitle="Configure photo evidence requirements" />
+            <Card style={styles.card}>
+              <SwitchRow title="Photos mandatory" subtitle="Require at least one photo" value={photosMandatory} onValueChange={setPhotosMandatory} />
+              <SwitchRow title="Require photo for immediate claims" subtitle="Filed at delivery site" value={requirePhotoImmediate} onValueChange={setRequirePhotoImmediate} />
+              <SwitchRow title="Require photo for delayed claims" subtitle="Filed after delivery" value={requirePhotoDelayed} onValueChange={setRequirePhotoDelayed} />
               <View style={styles.divider} />
-              <FieldInput label="Minimum Photos Required" placeholder="1" suffix="photos" keyboardType="numeric" value={minPhotosRequired} onChangeText={(v) => setMinPhotosRequired(v.replace(/\D/g, ''))} />
-              <FieldInput label="Maximum Photos Allowed" placeholder="10" suffix="photos" keyboardType="numeric" value={maxPhotosAllowed} onChangeText={(v) => setMaxPhotosAllowed(v.replace(/\D/g, ''))} />
-            </View>
+              <FieldInput label="Minimum photos required" placeholder="1" suffix="photos" keyboardType="numeric" value={minPhotosRequired} onChangeText={(v) => setMinPhotosRequired(v.replace(/\D/g, ''))} />
+              <FieldInput label="Maximum photos allowed" placeholder="10" suffix="photos" keyboardType="numeric" value={maxPhotosAllowed} onChangeText={(v) => setMaxPhotosAllowed(v.replace(/\D/g, ''))} />
+            </Card>
 
-            <SectionHeader title="Signature Requirements" subtitle="Configure signature requirements" />
-            <View style={[styles.card, shadows.card]}>
-              <SwitchRow title="Require Customer Signature" subtitle="Customer must sign claim form" value={requireCustomerSignature} onValueChange={setRequireCustomerSignature} />
-              <SwitchRow title="Require Driver Signature" subtitle="Driver must sign claim form" value={requireDriverSignature} onValueChange={setRequireDriverSignature} />
-            </View>
+            <SectionHeader title="Signature requirements" subtitle="Configure signature requirements" />
+            <Card style={styles.card}>
+              <SwitchRow title="Require customer signature" subtitle="Customer must sign claim form" value={requireCustomerSignature} onValueChange={setRequireCustomerSignature} />
+              <SwitchRow title="Require driver signature" subtitle="Driver must sign claim form" value={requireDriverSignature} onValueChange={setRequireDriverSignature} />
+            </Card>
           </>
         ) : null}
 
         {activeTab === 'Automation' ? (
           <>
-            <SectionHeader title="Auto-Approval Rules" subtitle="Automatically approve claims meeting criteria" />
-            <View style={[styles.card, shadows.card]}>
-              <SwitchRow title="Enable Auto-Approval" subtitle="Automatically approve eligible claims" value={enableAutoApproval} onValueChange={setEnableAutoApproval} />
+            <SectionHeader title="Auto-approval rules" subtitle="Automatically approve claims meeting criteria" />
+            <Card style={styles.card}>
+              <SwitchRow title="Enable auto-approval" subtitle="Automatically approve eligible claims" value={enableAutoApproval} onValueChange={setEnableAutoApproval} />
               {enableAutoApproval ? (
                 <>
                   <View style={styles.divider} />
                   <FieldInput
-                    label="Auto-Approve Under Amount"
+                    label="Auto-approve under amount"
                     placeholder="Leave empty for no limit"
                     helperText="Claims below this amount will be auto-approved"
                     prefix="R"
@@ -377,7 +385,7 @@ export default function ClaimSettings() {
                     value={autoApproveAmount}
                     onChangeText={setAutoApproveAmount}
                   />
-                  <Text style={styles.cardTitle}>Auto-Approve Claim Types:</Text>
+                  <Text style={styles.cardTitle}>Auto-approve claim types</Text>
                   <View style={styles.chipWrap}>
                     {Array.from(selectedClaimTypes).map((type) => (
                       <Chip key={type} label={claimTypeDisplayText(type)} selected={autoApproveTypes.has(type)} onPress={() => toggleAutoApproveType(type)} />
@@ -385,17 +393,17 @@ export default function ClaimSettings() {
                   </View>
                 </>
               ) : null}
-            </View>
+            </Card>
 
-            <SectionHeader title="Fraud Detection" subtitle="Detect potentially fraudulent claims" />
-            <View style={[styles.card, shadows.card]}>
-              <SwitchRow title="Enable Fraud Detection" subtitle="Flag suspicious claim patterns" value={enableFraudDetection} onValueChange={setEnableFraudDetection} />
+            <SectionHeader title="Fraud detection" subtitle="Detect potentially fraudulent claims" />
+            <Card style={styles.card}>
+              <SwitchRow title="Enable fraud detection" subtitle="Flag suspicious claim patterns" value={enableFraudDetection} onValueChange={setEnableFraudDetection} />
               {enableFraudDetection ? (
                 <>
                   <View style={styles.divider} />
-                  <FieldInput label="High-Value Threshold" placeholder="e.g., 1000" helperText="Flag claims above this amount" prefix="R" keyboardType="decimal-pad" value={fraudAmount} onChangeText={setFraudAmount} />
+                  <FieldInput label="High-value threshold" placeholder="e.g., 1000" helperText="Flag claims above this amount" prefix="R" keyboardType="decimal-pad" value={fraudAmount} onChangeText={setFraudAmount} />
                   <FieldInput
-                    label="Frequency Threshold"
+                    label="Frequency threshold"
                     placeholder="e.g., 5"
                     helperText="Flag if driver files X claims per month"
                     suffix="claims/month"
@@ -405,16 +413,16 @@ export default function ClaimSettings() {
                   />
                 </>
               ) : null}
-            </View>
+            </Card>
 
-            <SectionHeader title="Pattern Detection" subtitle="Identify recurring claim patterns" />
-            <View style={[styles.card, shadows.card]}>
-              <SwitchRow title="Enable Pattern Detection" subtitle="Detect recurring issues" value={enablePatternDetection} onValueChange={setEnablePatternDetection} />
+            <SectionHeader title="Pattern detection" subtitle="Identify recurring claim patterns" />
+            <Card style={styles.card}>
+              <SwitchRow title="Enable pattern detection" subtitle="Detect recurring issues" value={enablePatternDetection} onValueChange={setEnablePatternDetection} />
               {enablePatternDetection ? (
                 <>
                   <View style={styles.divider} />
                   <FieldInput
-                    label="Recurring Claim Threshold"
+                    label="Recurring claim threshold"
                     placeholder="3"
                     helperText="Same issue X times = pattern (notify management)"
                     suffix="occurrences"
@@ -424,34 +432,38 @@ export default function ClaimSettings() {
                   />
                 </>
               ) : null}
-            </View>
+            </Card>
           </>
         ) : null}
 
         {activeTab === 'Features' ? (
           <>
-            <SectionHeader title="Filing Permissions" subtitle="Control who can file claims" />
-            <View style={[styles.card, shadows.card]}>
-              <SwitchRow title="Allow Driver Filing" subtitle="Drivers can file claims via mobile app" value={allowDriverFiling} onValueChange={setAllowDriverFiling} />
-              <SwitchRow title="Allow Admin Filing" subtitle="Admins can file claims on behalf of drivers" value={allowAdminFiling} onValueChange={setAllowAdminFiling} />
-              <SwitchRow title="Customer Portal" subtitle="Customers can view/file claims (coming soon)" value={allowCustomerPortal} onValueChange={() => {}} disabled />
-            </View>
+            <SectionHeader title="Filing permissions" subtitle="Control who can file claims" />
+            <Card style={styles.card}>
+              <SwitchRow title="Allow driver filing" subtitle="Drivers can file claims via mobile app" value={allowDriverFiling} onValueChange={setAllowDriverFiling} />
+              <SwitchRow title="Allow admin filing" subtitle="Admins can file claims on behalf of drivers" value={allowAdminFiling} onValueChange={setAllowAdminFiling} />
+              <SwitchRow title="Customer portal" subtitle="Customers can view/file claims (coming soon)" value={allowCustomerPortal} onValueChange={() => {}} disabled />
+            </Card>
 
-            <SectionHeader title="Communication Features" subtitle="Enable collaboration features" />
-            <View style={[styles.card, shadows.card]}>
-              <SwitchRow title="Enable Comments" subtitle="Users can add comments to claims" value={enableComments} onValueChange={setEnableComments} />
-              <SwitchRow title="Enable Internal Notes" subtitle="Admin-only internal notes" value={enableInternalNotes} onValueChange={setEnableInternalNotes} />
-            </View>
+            <SectionHeader title="Communication features" subtitle="Enable collaboration features" />
+            <Card style={styles.card}>
+              <SwitchRow title="Enable comments" subtitle="Users can add comments to claims" value={enableComments} onValueChange={setEnableComments} />
+              <SwitchRow title="Enable internal notes" subtitle="Admin-only internal notes" value={enableInternalNotes} onValueChange={setEnableInternalNotes} />
+            </Card>
 
             <SectionHeader title="Notifications" subtitle="Configure notification channels" />
-            <View style={[styles.card, shadows.card]}>
-              <SwitchRow title="Push Notifications" subtitle="In-app notifications" value={enablePushNotifications} onValueChange={setEnablePushNotifications} />
-              <SwitchRow title="Email Notifications" subtitle="Send email updates" value={enableEmailNotifications} onValueChange={setEnableEmailNotifications} />
-              <SwitchRow title="SMS Notifications" subtitle="Send SMS alerts (additional charges apply)" value={enableSMSNotifications} onValueChange={setEnableSMSNotifications} />
-            </View>
+            <Card style={styles.card}>
+              <SwitchRow title="Push notifications" subtitle="In-app notifications" value={enablePushNotifications} onValueChange={setEnablePushNotifications} />
+              <SwitchRow title="Email notifications" subtitle="Send email updates" value={enableEmailNotifications} onValueChange={setEnableEmailNotifications} />
+              <SwitchRow title="SMS notifications" subtitle="Send SMS alerts (additional charges apply)" value={enableSMSNotifications} onValueChange={setEnableSMSNotifications} />
+            </Card>
           </>
         ) : null}
       </ScrollView>
+
+      <View style={styles.bottomBar}>
+        <PrimaryButton label="Save settings" icon="check" loading={isSaving} onPress={handleSave} />
+      </View>
     </View>
   );
 }
@@ -462,6 +474,15 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
       <Text style={styles.sectionHeaderTitle}>{title}</Text>
       <Text style={styles.sectionHeaderSubtitle}>{subtitle}</Text>
     </View>
+  );
+}
+
+function TextAction({ icon, label, onPress }: { icon: 'check' | 'close'; label: string; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.textButton} onPress={onPress}>
+      <AppIcon name={icon} size={16} color={colors.shell} />
+      <Text style={styles.textButtonLabel}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -489,7 +510,15 @@ function FieldInput({
       <Text style={styles.fieldLabel}>{label}</Text>
       <View style={styles.fieldInputRow}>
         {prefix ? <Text style={styles.fieldAffix}>{prefix}</Text> : null}
-        <TextInput style={styles.fieldInput} placeholder={placeholder} keyboardType={keyboardType} value={value} onChangeText={onChangeText} />
+        <TextInput
+          style={styles.fieldInput}
+          placeholder={placeholder}
+          placeholderTextColor={colors.contentSecondary}
+          accessibilityLabel={label}
+          keyboardType={keyboardType}
+          value={value}
+          onChangeText={onChangeText}
+        />
         {suffix ? <Text style={styles.fieldAffix}>{suffix}</Text> : null}
       </View>
       {helperText ? <Text style={styles.fieldHelperText}>{helperText}</Text> : null}
@@ -516,14 +545,25 @@ function SwitchRow({
         <Text style={styles.switchRowTitle}>{title}</Text>
         <Text style={styles.switchRowSubtitle}>{subtitle}</Text>
       </View>
-      <Switch value={value} onValueChange={onValueChange} disabled={disabled} />
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        trackColor={{ true: colors.shell, false: colors.border }}
+        thumbColor={colors.surface}
+      />
     </View>
   );
 }
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
-    <Pressable style={[styles.chip, selected && styles.chipSelected]} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={[styles.chip, selected && styles.chipSelected]}
+      onPress={onPress}
+    >
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
     </Pressable>
   );
@@ -531,8 +571,8 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
 
 function RadioRow({ title, subtitle, selected, onPress }: { title: string; subtitle: string; selected: boolean; onPress: () => void }) {
   return (
-    <Pressable style={styles.radioRow} onPress={onPress}>
-      <Text style={styles.radioGlyph}>{selected ? '◉' : '○'}</Text>
+    <Pressable accessibilityRole="radio" accessibilityState={{ selected }} style={styles.radioRow} onPress={onPress}>
+      <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>{selected ? <View style={styles.radioInner} /> : null}</View>
       <View style={styles.radioTextBox}>
         <Text style={styles.radioTitle}>{title}</Text>
         <Text style={styles.radioSubtitle}>{subtitle}</Text>
@@ -542,79 +582,57 @@ function RadioRow({ title, subtitle, selected, onPress }: { title: string; subti
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.card,
-    paddingHorizontal: spacing.large,
-    paddingVertical: spacing.medium,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: radii.buttonRadius,
-    paddingHorizontal: spacing.medium,
-    paddingVertical: spacing.small + 4,
-    minWidth: 90,
-  },
-  tabStrip: { backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  container: { flex: 1, backgroundColor: colors.canvas },
+  tabStrip: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, flexGrow: 0 },
   tabStripContent: { paddingHorizontal: spacing.medium, gap: spacing.small },
   tabButton: { paddingHorizontal: spacing.medium, paddingVertical: spacing.medium, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabButtonActive: { borderBottomColor: colors.primary },
-  tabButtonText: { color: colors.textSecondary, fontWeight: '600' },
-  tabButtonTextActive: { color: colors.primary },
+  tabButtonActive: { borderBottomColor: colors.shell },
+  tabButtonText: { ...textStyles.label, color: colors.contentSecondary },
+  tabButtonTextActive: { color: colors.shell },
   content: { flex: 1 },
   contentInner: { padding: spacing.medium, paddingBottom: spacing.xLarge },
   sectionHeader: { marginBottom: spacing.small + 4 },
-  sectionHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: colors.textPrimary },
-  sectionHeaderSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  card: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium, marginBottom: spacing.large },
-  cardTitle: { fontWeight: 'bold', fontSize: 14, marginTop: spacing.small, marginBottom: spacing.small },
-  countText: { color: colors.textSecondary, fontSize: 13, marginBottom: spacing.small + 4 },
+  sectionHeaderTitle: { ...textStyles.heading3 },
+  sectionHeaderSubtitle: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: 2 },
+  card: { marginBottom: spacing.large },
+  cardTitle: { ...textStyles.label, fontWeight: '700', marginTop: spacing.small, marginBottom: spacing.small },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, marginBottom: spacing.small },
+  countText: { ...textStyles.bodySmall, color: colors.contentSecondary, marginBottom: spacing.small + 4 },
   fieldGroup: { marginBottom: spacing.medium },
-  fieldLabel: { fontWeight: '600', fontSize: 13, color: colors.textPrimary, marginBottom: spacing.small },
+  fieldLabel: { ...textStyles.label, marginBottom: spacing.small },
   fieldInputRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small },
-  fieldInput: { flex: 1, borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: spacing.small + 4, backgroundColor: colors.background },
-  fieldAffix: { color: colors.textSecondary, fontSize: 13 },
-  fieldHelperText: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-  previewBox: { backgroundColor: `${colors.info}1A`, borderRadius: radii.borderRadius, padding: spacing.small + 4, marginTop: spacing.small },
-  previewText: { color: colors.info, fontWeight: 'bold' },
+  fieldInput: { flex: 1, ...textStyles.bodyLarge, borderWidth: 1, borderColor: colors.border, borderRadius: radii.inputRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small + 4, minHeight: 48, backgroundColor: colors.surface },
+  fieldAffix: { ...textStyles.bodySmall, color: colors.contentSecondary },
+  fieldHelperText: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: 4 },
+  previewBox: { backgroundColor: colors.activeMuted, borderRadius: radii.inputRadius, padding: spacing.small + 4, marginTop: spacing.small },
+  previewText: { ...textStyles.label, color: colors.shell, fontWeight: '700' },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small },
-  chip: { borderRadius: radii.borderRadius, paddingHorizontal: spacing.small + 4, paddingVertical: 6, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.divider },
-  chipSelected: { backgroundColor: `${colors.primary}33`, borderColor: colors.primary },
-  chipText: { fontSize: 13, color: colors.textSecondary },
-  chipTextSelected: { color: colors.primary, fontWeight: '600' },
-  buttonRow: { flexDirection: 'row', gap: spacing.medium, marginTop: spacing.medium },
-  textButton: { paddingVertical: spacing.small },
-  textButtonLabel: { color: colors.primary, fontWeight: '600', fontSize: 13 },
-  warningBanner: { backgroundColor: `${colors.warning}1A`, borderRadius: radii.borderRadius, borderWidth: 1, borderColor: `${colors.warning}66`, padding: spacing.medium },
-  warningBannerText: { color: colors.warning, fontSize: 13 },
-  divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.medium },
+  chip: { borderRadius: radii.inputRadius, paddingHorizontal: spacing.small + 4, paddingVertical: 6, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  chipSelected: { backgroundColor: colors.activeMuted, borderColor: colors.shell },
+  chipText: { ...textStyles.bodySmall, color: colors.contentSecondary },
+  chipTextSelected: { color: colors.shell, fontWeight: '600' },
+  buttonRow: { flexDirection: 'row', gap: spacing.large, marginTop: spacing.medium },
+  textButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.small },
+  textButtonLabel: { ...textStyles.labelSmall, color: colors.shell },
+  warningBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, backgroundColor: colors.attentionMuted, borderRadius: radii.inputRadius, borderWidth: 1, borderColor: colors.attention, padding: spacing.medium },
+  warningBannerText: { ...textStyles.bodySmall, color: colors.contentPrimary, flex: 1 },
+  divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.medium },
   switchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.small + 4 },
   switchRowTextBox: { flex: 1, marginRight: spacing.small },
-  switchRowTitle: { fontWeight: '500', fontSize: 14 },
-  switchRowSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  radioRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: spacing.small + 4 },
-  radioGlyph: { fontSize: 18, color: colors.primary, marginRight: spacing.small + 4, marginTop: 2 },
+  switchRowTitle: { ...textStyles.bodyMedium, fontWeight: '500' },
+  switchRowSubtitle: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: 2 },
+  radioRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.small + 4, paddingVertical: spacing.small + 4 },
+  radioOuter: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  radioOuterSelected: { borderColor: colors.shell },
+  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.shell },
   radioTextBox: { flex: 1 },
-  radioTitle: { fontWeight: '600', fontSize: 14 },
-  radioSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  workflowStepRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.small + 4 },
-  workflowStepBadge: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginRight: spacing.small + 4 },
-  workflowStepBadgeText: { color: colors.white, fontWeight: 'bold' },
+  radioTitle: { ...textStyles.label },
+  radioSubtitle: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: 2 },
+  workflowStepRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small + 4, marginBottom: spacing.small + 4 },
+  workflowStepBadge: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.shell, alignItems: 'center', justifyContent: 'center' },
+  workflowStepBadgeText: { color: colors.onPrimary, fontWeight: '700' },
   workflowStepTextBox: { flex: 1 },
-  workflowStepTitle: { fontWeight: 'bold' },
-  workflowStepSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  workflowStepCheck: { color: colors.success, fontSize: 18 },
-  emptyStateCard: { alignItems: 'center', paddingVertical: spacing.large },
-  emptyStateIcon: { fontSize: 40, opacity: 0.4 },
-  emptyStateTitle: { fontWeight: 'bold', fontSize: 16, color: colors.textSecondary, marginTop: spacing.small + 4 },
-  emptyStateSubtitle: { color: colors.textSecondary, textAlign: 'center', marginTop: spacing.small },
+  workflowStepTitle: { ...textStyles.label, fontWeight: '700' },
+  workflowStepSubtitle: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: 2 },
+  bottomBar: { padding: spacing.medium, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
 });

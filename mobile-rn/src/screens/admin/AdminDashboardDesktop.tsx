@@ -251,7 +251,7 @@ export default function AdminDashboardDesktop({ navigation }: AdminDashboardDesk
           <Pressable onPress={openMenu('drawer')}>
             <Text style={styles.headerBarIcon}>☰</Text>
           </Pressable>
-          <Text style={textStyles.heading3}>Admin Dashboard</Text>
+          <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Admin Dashboard</Text>
           <Text style={styles.desktopBadge}>Desktop</Text>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.headerBarMenus}>

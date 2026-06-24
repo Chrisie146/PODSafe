@@ -355,7 +355,7 @@ export default function ClaimsDashboardDesktop({ navigation }: { navigation: { n
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <Text style={textStyles.heading3}>Claims Management</Text>
+        <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Claims Management</Text>
         <View style={styles.headerBarRight}>
           {selectedIds.size > 0 ? (
             <View style={styles.selectedChip}>

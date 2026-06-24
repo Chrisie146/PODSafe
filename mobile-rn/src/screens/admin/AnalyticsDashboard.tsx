@@ -1,51 +1,50 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import { LineChart } from 'react-native-gifted-charts';
+import { AdminShell } from '../../components/admin/AdminShell';
+import {
+  AppIcon,
+  AppIconName,
+  Card,
+  EmptyState,
+  LoadingState,
+} from '../../components/ui';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { hasPermission } from '../../permissions/permissionService';
 import { DeliveryStatus } from '../../models/delivery';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
 /**
  * Ported from the MOBILE layout of lib/screens/admin/analytics_dashboard_screen.dart
  * (`AnalyticsDashboardMobile`, verified against source on 2026-06-22) — overview stats,
- * a delivery-trend line chart, a delivery-locations map, status distribution, top
+ * a delivery-trend line chart, a delivery-locations list, status distribution, top
  * drivers, and driver stats.
  *
- * Group A responsive-split screen, the last of 9 — only the mobile path is ported this
- * pass; the >1000px desktop branch lands in Phase 4. This is the one screen in the
- * entire inventory that was genuinely blocked on a missing package: confirmed via direct
- * read that it needs `fl_chart`'s `LineChart`. `react-native-gifted-charts` (the package
- * named in the migration plan) was installed this pass specifically to unblock it.
+ * Group A responsive-split screen — only the mobile path is ported this pass; the >1000px
+ * desktop branch lands in Phase 4. `react-native-gifted-charts` provides the `LineChart`.
  *
  * Deviations from the Flutter source:
- * - `fl_chart`'s `LineChart` becomes `react-native-gifted-charts`'s `LineChart` (data as
- *   `{ value, label }[]`, `curved`/`areaChart`/`startFillColor`/`endFillColor` map
- *   directly onto the Dart source's `isCurved`/`belowBarData`).
- * - `AnalyticsMapWidget` (a custom map widget) becomes a scrollable list of location
- *   entries with an "Open in Maps" link per row (`Linking.openURL`), same
- *   degraded-but-honest pattern as ClaimDetails.tsx's GPS section — `react-native-maps`
- *   isn't installed (that's still deferred to whenever live_tracking_screen is tackled;
- *   installing it wasn't part of this pass's scope, which was specifically the chart
- *   library). Per-location driver vehicle-info and per-claim POD-info enrichment (each an
- *   extra Firestore read per row in the Dart source) are dropped — the degraded list
- *   doesn't surface those fields, so fetching them would be pure waste.
- * - Location data reads PODs from the canonical top-level `pods/{deliveryId}` collection
- *   instead of the Dart source's `companies/{companyId}/pods` subcollection. Per this
- *   migration's own Section 4 (Dual-POD Architecture Decision, settled back in Phase 2):
- *   that subcollection is the *abandoned* pipeline with no real driver-capture writers in
- *   production (`document_intake_screen.dart` is its only consumer) — querying it here
- *   would almost always return nothing. Claim locations still read from
- *   `companies/{companyId}/claims`'s `gpsLocation` field, which *is* the canonical claims
- *   location (matches claimRepository.ts).
- * - Permission gate (`Permission.analyticsView`) is a direct `hasPermission()` check
- *   instead of the `PermissionBuilder` widget (same precedent as DeliveryManagement.tsx).
- * - Period selector (`SegmentedButton`) and status-distribution bars use existing
- *   chip/progress-bar patterns already established elsewhere in this phase.
+ * - `fl_chart` LineChart → `react-native-gifted-charts` LineChart.
+ * - `AnalyticsMapWidget` → scrollable location list with an "Open in Maps" link per row
+ *   (react-native-maps not installed; same degraded-but-honest pattern as ClaimDetails).
+ * - POD locations read the canonical top-level `pods/{deliveryId}`; claim locations read
+ *   `companies/{companyId}/claims`'s `gpsLocation`.
+ * - Permission gate is a direct `hasPermission()` check.
+ *
+ * UI/UX refresh (Operations Precision): the custom navy header, emoji stat/period/location/
+ * status/driver glyphs, and access-denied glyph are replaced with the shared AppHeader, SVG
+ * AppIcon, Card, EmptyState, and LoadingState. Semantic tokens only.
  */
 type Period = 'week' | 'month' | 'year';
+
+interface AnalyticsDashboardProps {
+  navigation: {
+    goBack: () => void;
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+  };
+}
 
 interface LocationEntry {
   id: string;
@@ -59,15 +58,15 @@ interface LocationEntry {
 function statusColor(status: string): string {
   switch (status) {
     case 'pending':
-      return colors.warning;
+      return colors.attention;
     case 'inTransit':
-      return colors.info;
+      return colors.active;
     case 'delivered':
-      return colors.success;
+      return colors.verified;
     case 'failed':
-      return colors.error;
+      return colors.critical;
     default:
-      return colors.textSecondary;
+      return colors.contentSecondary;
   }
 }
 
@@ -91,8 +90,9 @@ function periodStartDate(period: Period): Date {
   return new Date(Date.now() - days * 86400000);
 }
 
-export default function AnalyticsDashboard() {
+export default function AnalyticsDashboard({ navigation }: AnalyticsDashboardProps) {
   const currentUser = useAuthStore((s) => s.currentUser);
+  const signOut = useAuthStore((s) => s.signOut);
   const { width } = useWindowDimensions();
   const columns = width > 800 ? 4 : 2;
 
@@ -147,16 +147,17 @@ export default function AnalyticsDashboard() {
 
   const loadDailyDeliveries = useCallback(async (companyId: string, period: Period) => {
     const startDate = periodStartDate(period);
+    // Company-scoped fetch + local date filter: avoids a composite
+    // (companyId == + scheduledDate >=) index, matching the dashboards' fallback.
     const snapshot = await firestore()
       .collection('deliveries')
       .where('companyId', '==', companyId)
-      .where('scheduledDate', '>=', firestore.Timestamp.fromDate(startDate))
       .get();
 
     const counts: Record<string, number> = {};
     snapshot.docs.forEach((doc) => {
       const scheduledDate = (doc.data().scheduledDate as { toDate?: () => Date })?.toDate?.();
-      if (scheduledDate) {
+      if (scheduledDate && scheduledDate >= startDate) {
         const key = scheduledDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
         counts[key] = (counts[key] ?? 0) + 1;
       }
@@ -245,13 +246,24 @@ export default function AnalyticsDashboard() {
     loadAnalytics();
   }, [loadAnalytics]);
 
+  const handleSignOut = () => {
+    Alert.alert('Sign out', 'Sign out of this administration workspace?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+    ]);
+  };
+
   if (!hasPermission(currentUser, 'analyticsView')) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.deniedIcon}>🔒</Text>
-        <Text style={styles.deniedTitle}>Access Denied</Text>
-        <Text style={styles.deniedSubtitle}>You don&apos;t have permission to view analytics</Text>
-      </View>
+      <AdminShell
+        activeNav="analytics"
+        title="Analytics & reports"
+        userName={currentUser?.fullName}
+        onNavigate={(screen) => navigation.navigate(screen)}
+        onLogout={handleSignOut}
+      >
+        <EmptyState icon="lock" title="Access denied" message="You don't have permission to view analytics." />
+      </AdminShell>
     );
   }
 
@@ -260,113 +272,109 @@ export default function AnalyticsDashboard() {
   const statusTotal = Object.values(deliveriesByStatus).reduce((a, b) => a + b, 0);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Text style={textStyles.heading2}>Analytics & Reports</Text>
-        <Pressable onPress={loadAnalytics}>
-          <Text style={styles.headerBarIcon}>↻</Text>
-        </Pressable>
-      </View>
-
+    <AdminShell
+      activeNav="analytics"
+      title="Analytics & reports"
+      userName={currentUser?.fullName}
+      onNavigate={(screen) => navigation.navigate(screen)}
+      onRefresh={loadAnalytics}
+      onLogout={handleSignOut}
+    >
+      <View style={styles.container}>
       {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <LoadingState title="Loading analytics" message="Aggregating delivery and driver statistics." />
       ) : (
         <ScrollView
           style={styles.content}
           contentContainerStyle={styles.contentInner}
           refreshControl={<RefreshControl refreshing={false} onRefresh={loadAnalytics} />}
         >
-          <View style={[styles.card, shadows.card, styles.periodRow]}>
-            <Text style={styles.periodLabel}>📅 Period:</Text>
+          <Card style={[styles.card, styles.periodRow]}>
+            <AppIcon name="calendar" size={18} color={colors.contentSecondary} />
+            <Text style={styles.periodLabel}>Period:</Text>
             {(['week', 'month', 'year'] as Period[]).map((period) => (
-              <Pressable key={period} style={[styles.periodChip, selectedPeriod === period && styles.periodChipSelected]} onPress={() => setSelectedPeriod(period)}>
+              <Pressable
+                key={period}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedPeriod === period }}
+                style={[styles.periodChip, selectedPeriod === period && styles.periodChipSelected]}
+                onPress={() => setSelectedPeriod(period)}
+              >
                 <Text style={[styles.periodChipText, selectedPeriod === period && styles.periodChipTextSelected]}>
                   {period.charAt(0).toUpperCase() + period.slice(1)}
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </Card>
 
           <Text style={[textStyles.heading3, styles.sectionTitle]}>Overview</Text>
           <View style={styles.statsGrid}>
-            <StatCard label="Total Deliveries" value={String(totalDeliveries)} icon="🚚" color={colors.primary} width={columns} />
-            <StatCard label="Completed" value={String(completedDeliveries)} icon="✓" color={colors.success} width={columns} />
-            <StatCard label="In Transit" value={String(activeDeliveries)} icon="⏳" color={colors.info} width={columns} />
-            <StatCard label="Completion Rate" value={`${completionRate.toFixed(1)}%`} icon="📈" color={colors.success} width={columns} />
+            <StatCard label="Total deliveries" value={String(totalDeliveries)} icon="truck" color={colors.shell} width={columns} />
+            <StatCard label="Completed" value={String(completedDeliveries)} icon="check" color={colors.verified} width={columns} />
+            <StatCard label="In transit" value={String(activeDeliveries)} icon="activity" color={colors.active} width={columns} />
+            <StatCard label="Completion rate" value={`${completionRate.toFixed(1)}%`} icon="chart" color={colors.verified} width={columns} />
           </View>
 
-          <Text style={[textStyles.heading3, styles.sectionTitle]}>Delivery Trend</Text>
-          <View style={[styles.card, shadows.card]}>
+          <Text style={[textStyles.heading3, styles.sectionTitle]}>Delivery trend</Text>
+          <Card style={styles.card}>
             {chartData.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateIcon}>📈</Text>
-                <Text style={styles.emptyStateText}>No delivery data available</Text>
-              </View>
+              <EmptyState icon="chart" title="No delivery data available" message="Delivery trend will appear once deliveries are scheduled in this period." />
             ) : (
               <LineChart
                 data={chartData}
                 height={180}
-                color={colors.primary}
+                color={colors.active}
                 thickness={3}
                 curved
                 areaChart
-                startFillColor={colors.primary}
-                endFillColor={colors.primary}
+                startFillColor={colors.active}
+                endFillColor={colors.active}
                 startOpacity={0.2}
                 endOpacity={0.02}
-                dataPointsColor={colors.primary}
-                yAxisTextStyle={styles.chartYAxisText}
-                xAxisLabelTextStyle={styles.chartXAxisText}
-                rulesColor={colors.divider}
-                xAxisColor={colors.divider}
-                yAxisColor={colors.divider}
+                dataPointsColor={colors.active}
+                yAxisTextStyle={styles.chartAxisText}
+                xAxisLabelTextStyle={styles.chartAxisText}
+                rulesColor={colors.border}
+                xAxisColor={colors.border}
+                yAxisColor={colors.border}
                 noOfSections={4}
                 initialSpacing={12}
               />
             )}
-          </View>
+          </Card>
 
-          <Text style={[textStyles.heading3, styles.sectionTitle]}>Delivery Locations</Text>
-          <View style={[styles.infoBanner]}>
+          <Text style={[textStyles.heading3, styles.sectionTitle]}>Delivery locations</Text>
+          <View style={styles.infoBanner}>
+            <AppIcon name="location" size={16} color={colors.shell} />
             <Text style={styles.infoBannerText}>Locations loaded: {locations.length}</Text>
           </View>
-          <View style={[styles.card, shadows.card, styles.locationsCard]}>
+          <Card style={[styles.card, styles.flushCard]}>
             {locations.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateIcon}>📍</Text>
-                <Text style={styles.emptyStateText}>No location data available</Text>
-              </View>
+              <EmptyState icon="location" title="No location data available" message="POD and claim locations will appear here once captured." />
             ) : (
               locations.map((loc, index) => (
                 <Pressable
                   key={loc.id}
-                  style={[styles.locationRow, index < locations.length - 1 && styles.locationRowDivider]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${loc.title} in Maps`}
+                  style={[styles.locationRow, index < locations.length - 1 && styles.rowDivider]}
                   onPress={() => Linking.openURL(`https://www.google.com/maps?q=${loc.latitude},${loc.longitude}`)}
                 >
-                  <Text style={styles.locationIcon}>{loc.type === 'pod' ? '📦' : '⚠'}</Text>
+                  <AppIcon name={loc.type === 'pod' ? 'package' : 'alert'} size={20} color={loc.type === 'pod' ? colors.shell : colors.attention} />
                   <View style={styles.locationTextBox}>
-                    <Text style={styles.locationTitle} numberOfLines={1}>
-                      {loc.title}
-                    </Text>
-                    <Text style={styles.locationSubtitle} numberOfLines={1}>
-                      {loc.subtitle}
-                    </Text>
+                    <Text style={styles.locationTitle} numberOfLines={1}>{loc.title}</Text>
+                    <Text style={styles.locationSubtitle} numberOfLines={1}>{loc.subtitle}</Text>
                   </View>
-                  <Text style={styles.locationMapsLink}>🗺</Text>
+                  <AppIcon name="map" size={20} color={colors.contentSecondary} />
                 </Pressable>
               ))
             )}
-          </View>
+          </Card>
 
-          <Text style={[textStyles.heading3, styles.sectionTitle]}>Status Distribution</Text>
-          <View style={[styles.card, shadows.card]}>
+          <Text style={[textStyles.heading3, styles.sectionTitle]}>Status distribution</Text>
+          <Card style={styles.card}>
             {Object.keys(deliveriesByStatus).length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateIcon}>📊</Text>
-                <Text style={styles.emptyStateText}>No status data available</Text>
-              </View>
+              <EmptyState icon="chart" title="No status data available" message="The delivery status breakdown will appear here." />
             ) : (
               Object.entries(deliveriesByStatus).map(([status, count]) => {
                 const percentage = statusTotal > 0 ? (count / statusTotal) * 100 : 0;
@@ -389,118 +397,102 @@ export default function AnalyticsDashboard() {
                 );
               })
             )}
-          </View>
+          </Card>
 
-          <Text style={[textStyles.heading3, styles.sectionTitle]}>Top Performing Drivers</Text>
-          <View style={[styles.card, shadows.card, styles.locationsCard]}>
+          <Text style={[textStyles.heading3, styles.sectionTitle]}>Top performing drivers</Text>
+          <Card style={[styles.card, styles.flushCard]}>
             {topDrivers.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateIcon}>👥</Text>
-                <Text style={styles.emptyStateText}>No driver performance data yet</Text>
-              </View>
+              <EmptyState icon="users" title="No driver performance data yet" message="Completed-delivery leaders will appear here." />
             ) : (
               topDrivers.map((driver, index) => {
                 const isTop = index === 0;
                 return (
-                  <View key={`${driver.name}-${index}`} style={[styles.driverRow, index < topDrivers.length - 1 && styles.locationRowDivider]}>
-                    <View style={[styles.driverRank, { backgroundColor: isTop ? `${colors.success}33` : `${colors.primary}1A` }]}>
-                      <Text style={[styles.driverRankText, { color: isTop ? colors.success : colors.primary }]}>{index + 1}</Text>
+                  <View key={`${driver.name}-${index}`} style={[styles.driverRow, index < topDrivers.length - 1 && styles.rowDivider]}>
+                    <View style={[styles.driverRank, { backgroundColor: isTop ? colors.verifiedMuted : colors.activeMuted }]}>
+                      <Text style={[styles.driverRankText, { color: isTop ? colors.verified : colors.shell }]}>{index + 1}</Text>
                     </View>
                     <Text style={[styles.driverName, isTop && styles.driverNameTop]}>{driver.name}</Text>
-                    <View style={[styles.driverBadge, { backgroundColor: isTop ? colors.success : `${colors.primary}1A` }]}>
-                      <Text style={[styles.driverBadgeText, { color: isTop ? colors.white : colors.primary }]}>{driver.deliveries} deliveries</Text>
+                    <View style={[styles.driverBadge, { backgroundColor: isTop ? colors.verified : colors.activeMuted }]}>
+                      <Text style={[styles.driverBadgeText, { color: isTop ? colors.shell : colors.shell }]}>{driver.deliveries} deliveries</Text>
                     </View>
                   </View>
                 );
               })
             )}
-          </View>
+          </Card>
 
-          <Text style={[textStyles.heading3, styles.sectionTitle]}>Driver Statistics</Text>
+          <Text style={[textStyles.heading3, styles.sectionTitle]}>Driver statistics</Text>
           <View style={styles.driverStatsRow}>
-            <View style={[styles.card, shadows.card, styles.driverStatCard]}>
-              <Text style={styles.driverStatIcon}>👥</Text>
-              <Text style={[styles.driverStatValue, { color: colors.primary }]}>{totalDrivers}</Text>
-              <Text style={styles.driverStatLabel}>Total Drivers</Text>
-            </View>
-            <View style={[styles.card, shadows.card, styles.driverStatCard]}>
-              <Text style={styles.driverStatIcon}>✓</Text>
-              <Text style={[styles.driverStatValue, { color: colors.success }]}>{activeDrivers}</Text>
-              <Text style={styles.driverStatLabel}>Active Drivers</Text>
-            </View>
+            <Card style={styles.driverStatCard}>
+              <AppIcon name="users" size={26} color={colors.shell} />
+              <Text style={[styles.driverStatValue, { color: colors.shell }]}>{totalDrivers}</Text>
+              <Text style={styles.driverStatLabel}>Total drivers</Text>
+            </Card>
+            <Card style={styles.driverStatCard}>
+              <AppIcon name="check" size={26} color={colors.verified} />
+              <Text style={[styles.driverStatValue, { color: colors.verified }]}>{activeDrivers}</Text>
+              <Text style={styles.driverStatLabel}>Active drivers</Text>
+            </Card>
           </View>
         </ScrollView>
       )}
-    </View>
+      </View>
+    </AdminShell>
   );
 }
 
-function StatCard({ label, value, icon, color, width }: { label: string; value: string; icon: string; color: string; width: number }) {
+function StatCard({ label, value, icon, color, width }: { label: string; value: string; icon: AppIconName; color: string; width: number }) {
   return (
-    <View style={[styles.statCard, shadows.card, { width: `${100 / width - 2}%` }]}>
-      <Text style={styles.statIcon}>{icon}</Text>
+    <Card style={[styles.statCard, { width: `${100 / width - 2}%` }]}>
+      <AppIcon name={icon} size={22} color={color} />
       <Text style={[styles.statValue, { color }]}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, padding: spacing.large },
-  deniedIcon: { fontSize: 56 },
-  deniedTitle: { fontSize: 22, fontWeight: 'bold', marginTop: spacing.medium },
-  deniedSubtitle: { color: colors.textSecondary, marginTop: spacing.small },
-  headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.primary, paddingHorizontal: spacing.large, paddingVertical: spacing.medium },
-  headerBarIcon: { fontSize: 18, color: colors.white },
+  container: { flex: 1, backgroundColor: colors.canvas },
   content: { flex: 1 },
   contentInner: { padding: spacing.medium, paddingBottom: spacing.xLarge },
-  card: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium, marginBottom: spacing.large },
-  chartYAxisText: { fontSize: 10, color: colors.textSecondary },
-  chartXAxisText: { fontSize: 9, color: colors.textSecondary },
+  card: { marginBottom: spacing.large },
+  flushCard: { padding: 0, overflow: 'hidden' },
+  chartAxisText: { ...textStyles.bodySmall, color: colors.contentSecondary },
   periodRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small },
-  periodLabel: { fontWeight: '600', marginRight: spacing.small },
-  periodChip: { borderRadius: radii.borderRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.divider },
-  periodChipSelected: { backgroundColor: `${colors.primary}33`, borderColor: colors.primary },
-  periodChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
-  periodChipTextSelected: { color: colors.primary },
+  periodLabel: { ...textStyles.label, marginRight: spacing.small },
+  periodChip: { borderRadius: radii.inputRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  periodChipSelected: { backgroundColor: colors.activeMuted, borderColor: colors.shell },
+  periodChipText: { ...textStyles.bodySmall, color: colors.contentSecondary, fontWeight: '600' },
+  periodChipTextSelected: { color: colors.shell },
   sectionTitle: { marginBottom: spacing.small + 4 },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small + 4, marginBottom: spacing.large },
-  statCard: { alignItems: 'center', backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium },
-  statIcon: { fontSize: 22 },
-  statValue: { fontSize: 20, fontWeight: 'bold', marginTop: spacing.small },
-  statLabel: { fontSize: 11, color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
-  emptyState: { alignItems: 'center', paddingVertical: spacing.large },
-  emptyStateIcon: { fontSize: 40, opacity: 0.4 },
-  emptyStateText: { color: colors.textSecondary, marginTop: spacing.small },
-  infoBanner: { backgroundColor: `${colors.info}1A`, borderRadius: radii.borderRadius, padding: spacing.small + 4, marginBottom: spacing.small + 4 },
-  infoBannerText: { color: colors.info, fontSize: 12, fontWeight: '600' },
-  locationsCard: { padding: 0, overflow: 'hidden' },
-  locationRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.medium },
-  locationRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.divider },
-  locationIcon: { fontSize: 20, marginRight: spacing.small + 4 },
-  locationTextBox: { flex: 1, marginRight: spacing.small },
-  locationTitle: { fontWeight: '600' },
-  locationSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  locationMapsLink: { fontSize: 18 },
+  statCard: { alignItems: 'center', padding: spacing.medium },
+  statValue: { ...textStyles.heading3, marginTop: spacing.small },
+  statLabel: { ...textStyles.labelSmall, color: colors.contentSecondary, marginTop: 4, textAlign: 'center' },
+  infoBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, backgroundColor: colors.activeMuted, borderRadius: radii.inputRadius, padding: spacing.small + 4, marginBottom: spacing.small + 4 },
+  infoBannerText: { ...textStyles.labelSmall, color: colors.shell },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small + 4, padding: spacing.medium },
+  rowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  locationTextBox: { flex: 1 },
+  locationTitle: { ...textStyles.label },
+  locationSubtitle: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: 2 },
   statusRow: { marginBottom: spacing.medium },
   statusHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.small },
   statusLabelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.small },
   statusDot: { width: 12, height: 12, borderRadius: 6 },
-  statusLabel: { fontWeight: '600' },
-  statusValue: { fontWeight: 'bold', color: colors.textSecondary },
-  statusTrack: { height: 8, borderRadius: 4, backgroundColor: colors.divider, overflow: 'hidden' },
+  statusLabel: { ...textStyles.label },
+  statusValue: { ...textStyles.bodySmall, fontWeight: '700', color: colors.contentSecondary },
+  statusTrack: { height: 8, borderRadius: 4, backgroundColor: colors.surfaceMuted, overflow: 'hidden' },
   statusFill: { height: 8, borderRadius: 4 },
-  driverRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.medium },
-  driverRank: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginRight: spacing.medium },
-  driverRankText: { fontWeight: 'bold' },
-  driverName: { flex: 1, fontWeight: '600' },
-  driverNameTop: { fontWeight: 'bold' },
-  driverBadge: { borderRadius: 16, paddingHorizontal: spacing.small + 4, paddingVertical: spacing.small },
-  driverBadgeText: { fontWeight: 'bold', fontSize: 12 },
+  driverRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.medium, padding: spacing.medium },
+  driverRank: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  driverRankText: { fontWeight: '700' },
+  driverName: { flex: 1, ...textStyles.label },
+  driverNameTop: { fontWeight: '700' },
+  driverBadge: { borderRadius: radii.inputRadius, paddingHorizontal: spacing.small + 4, paddingVertical: spacing.small },
+  driverBadgeText: { ...textStyles.labelSmall, fontWeight: '700' },
   driverStatsRow: { flexDirection: 'row', gap: spacing.medium },
-  driverStatCard: { flex: 1, alignItems: 'center' },
-  driverStatIcon: { fontSize: 28 },
-  driverStatValue: { fontSize: 24, fontWeight: 'bold', marginTop: spacing.small },
-  driverStatLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  driverStatCard: { flex: 1, alignItems: 'center', paddingVertical: spacing.large },
+  driverStatValue: { ...textStyles.heading2, marginTop: spacing.small },
+  driverStatLabel: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: 4 },
 });

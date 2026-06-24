@@ -1,449 +1,597 @@
-// expects route.params: { driverId: string }
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useUserManagementStore } from '../../stores/useUserManagementStore';
-import { DeliveryRepository } from '../../repositories/deliveryRepository';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  AppHeader,
+  AppIcon,
+  AppIconName,
+  AppModal,
+  Card,
+  DangerButton,
+  ErrorState,
+  IconButton,
+  LoadingState,
+  Screen,
+  SecondaryButton,
+  StatusChip,
+  SuccessButton,
+} from '../../components/ui';
 import { Delivery, DeliveryStatus } from '../../models/delivery';
 import { AppUser, ApprovalStatus } from '../../models/user';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { DeliveryRepository } from '../../repositories/deliveryRepository';
+import { useUserManagementStore } from '../../stores/useUserManagementStore';
+import { colors, spacing } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
-/**
- * Ported from lib/screens/admin/driver_details_screen.dart (verified against source on
- * 2026-06-22).
- *
- * Deviations from the Flutter source:
- * - Takes only `driverId` via route params and loads the full user doc through
- *   useUserManagementStore (added loadUserById/selectedUser/deleteUser this pass) instead
- *   of requiring the caller to pass the full driverData map — same robustness argument as
- *   driver/DeliveryDetails.tsx's class comment (deep-link/refresh safety).
- * - Stats + "Recent Deliveries" both derive from a single
- *   DeliveryRepository.subscribeToDeliveriesForDriver() live subscription (already
- *   ordered desc by scheduledDate) instead of the Dart source's two separate Firestore
- *   reads (`.get()` for stats, a second `.snapshots()` stream limited to 5 for the list).
- * - The PopupMenuButton (Approve/Reject/Toggle Status/Delete) becomes a bottom-sheet-style
- *   Modal action list (house convention — no menu library installed); each action still
- *   confirms via Alert.alert exactly as the Dart source's AlertDialogs did.
- * - "Edit" navigates to a `CreateDriver` route that doesn't exist yet — create_driver_screen
- *   is explicitly blocked on Phase 5's `createUser` callable per the master plan, so this
- *   is wired ahead of that screen existing, same as other forward-references in this phase.
- */
 interface DriverDetailsProps {
   route: { params: { driverId: string } };
-  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
+  navigation: {
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+    goBack: () => void;
+  };
 }
 
 const deliveryRepository = new DeliveryRepository();
 
-function getInitials(name: string): string {
+function initials(name: string) {
   const parts = name.trim().split(' ').filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0][0].toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  return parts.length < 2
+    ? parts[0]?.[0]?.toUpperCase() ?? '?'
+    : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-function statusColor(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return colors.warning;
-    case 'inTransit':
-      return colors.info;
-    case 'delivered':
-      return colors.success;
-    default:
-      return colors.textSecondary;
-  }
+function deliveryPresentation(status: DeliveryStatus): {
+  label: string;
+  tone: 'info' | 'success' | 'warning' | 'error';
+  icon: AppIconName;
+} {
+  if (status === 'pending')
+    return { label: 'Pending', tone: 'warning', icon: 'calendar' };
+  if (status === 'inTransit')
+    return { label: 'In transit', tone: 'info', icon: 'truck' };
+  if (status === 'delivered')
+    return { label: 'Delivered', tone: 'success', icon: 'check' };
+  return { label: 'Failed', tone: 'error', icon: 'alert' };
 }
 
-function statusIcon(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return '⏳';
-    case 'inTransit':
-      return '🚚';
-    case 'delivered':
-      return '✓';
-    default:
-      return '?';
-  }
+function approvalPresentation(status?: ApprovalStatus): {
+  label: string;
+  tone: 'success' | 'warning' | 'error';
+} {
+  if (status === 'approved') return { label: 'Approved', tone: 'success' };
+  if (status === 'pending')
+    return { label: 'Pending approval', tone: 'warning' };
+  return { label: 'Rejected', tone: 'error' };
 }
 
-function formatStatus(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'Pending';
-    case 'inTransit':
-      return 'In Transit';
-    case 'delivered':
-      return 'Delivered';
-    default:
-      return status;
-  }
+function formatDate(date: Date) {
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
-function approvalStatusColor(status?: ApprovalStatus): string {
-  switch (status) {
-    case 'approved':
-      return colors.success;
-    case 'pending':
-      return colors.warning;
-    case 'rejected':
-      return colors.error;
-    default:
-      return colors.textSecondary;
-  }
-}
-
-function approvalStatusText(status?: ApprovalStatus): string {
-  switch (status) {
-    case 'approved':
-      return 'Approved';
-    case 'pending':
-      return 'Pending Approval';
-    case 'rejected':
-      return 'Rejected';
-    default:
-      return 'Unknown';
-  }
-}
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
-}
-
-function formatShortDate(date: Date): string {
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-export default function DriverDetails({ route, navigation }: DriverDetailsProps) {
+export default function DriverDetails({
+  route,
+  navigation,
+}: DriverDetailsProps) {
   const { driverId } = route.params;
-  const selectedUser = useUserManagementStore((s) => s.selectedUser);
-  const isLoading = useUserManagementStore((s) => s.isLoading);
-  const loadUserById = useUserManagementStore((s) => s.loadUserById);
-  const updateUser = useUserManagementStore((s) => s.updateUser);
-  const deleteUser = useUserManagementStore((s) => s.deleteUser);
-
+  const selectedUser = useUserManagementStore(state => state.selectedUser);
+  const isLoading = useUserManagementStore(state => state.isLoading);
+  const errorMessage = useUserManagementStore(state => state.errorMessage);
+  const loadUserById = useUserManagementStore(state => state.loadUserById);
+  const updateUser = useUserManagementStore(state => state.updateUser);
+  const deleteUser = useUserManagementStore(state => state.deleteUser);
   const [deliveries, setDeliveries] = useState<Delivery[] | null>(null);
-  const [showActions, setShowActions] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   useEffect(() => {
     loadUserById(driverId);
   }, [driverId, loadUserById]);
+  useEffect(
+    () =>
+      deliveryRepository.subscribeToDeliveriesForDriver(
+        driverId,
+        setDeliveries,
+        () => setDeliveries([]),
+      ),
+    [driverId],
+  );
 
-  useEffect(() => {
-    const unsubscribe = deliveryRepository.subscribeToDeliveriesForDriver(driverId, setDeliveries, () => setDeliveries([]));
-    return unsubscribe;
-  }, [driverId]);
+  const driver = selectedUser?.id === driverId ? selectedUser : null;
+  const stats = useMemo(
+    () =>
+      deliveries
+        ? {
+            total: deliveries.length,
+            active: deliveries.filter(
+              delivery => delivery.status === 'inTransit',
+            ).length,
+            completed: deliveries.filter(
+              delivery => delivery.status === 'delivered',
+            ).length,
+          }
+        : null,
+    [deliveries],
+  );
 
-  const stats = useMemo(() => {
-    if (!deliveries) return null;
-    return {
-      total: deliveries.length,
-      completed: deliveries.filter((d) => d.status === 'delivered').length,
-      active: deliveries.filter((d) => d.status === 'inTransit').length,
-    };
-  }, [deliveries]);
-
-  const recentDeliveries = useMemo(() => deliveries?.slice(0, 5) ?? [], [deliveries]);
-
-  const handleToggleStatus = () => {
-    if (!selectedUser) return;
-    const newStatus = !selectedUser.isActive;
-    setShowActions(false);
-    Alert.alert(
-      newStatus ? 'Activate Driver' : 'Deactivate Driver',
-      newStatus
-        ? 'Are you sure you want to activate this driver? They will be able to receive new deliveries.'
-        : 'Are you sure you want to deactivate this driver? They will no longer receive new deliveries.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: newStatus ? 'Activate' : 'Deactivate',
-          onPress: async () => {
-            try {
-              await updateUser({ ...selectedUser, isActive: newStatus });
-              Alert.alert('Success', newStatus ? 'Driver activated successfully' : 'Driver deactivated successfully');
-              navigation.goBack();
-            } catch (e) {
-              Alert.alert('Error', `${(e as Error).message}`);
-            }
-          },
-        },
-      ],
-    );
+  const updateDriver = async (
+    next: AppUser,
+    successTitle: string,
+    successMessage: string,
+  ) => {
+    try {
+      await updateUser(next);
+      Alert.alert(successTitle, successMessage);
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert('Unable to update driver', (error as Error).message);
+    }
   };
 
-  const handleApproveDriver = () => {
-    if (!selectedUser) return;
-    setShowActions(false);
-    Alert.alert('Approve Driver', 'Are you sure you want to approve this driver? They will be able to receive deliveries immediately.', [
+  const confirm = (
+    title: string,
+    message: string,
+    actionLabel: string,
+    action: () => Promise<void>,
+    destructive = false,
+  ) => {
+    setActionsOpen(false);
+    Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Approve',
-        onPress: async () => {
-          try {
-            await updateUser({ ...selectedUser, approvalStatus: 'approved' });
-            Alert.alert('Success', 'Driver approved successfully');
-            navigation.goBack();
-          } catch (e) {
-            Alert.alert('Error', `Error approving driver: ${(e as Error).message}`);
-          }
-        },
+        text: actionLabel,
+        style: destructive ? 'destructive' : 'default',
+        onPress: action,
       },
     ]);
   };
 
-  const handleRejectDriver = () => {
-    if (!selectedUser) return;
-    setShowActions(false);
-    Alert.alert('Reject Driver', 'Are you sure you want to reject this driver? They will not be able to receive deliveries.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reject',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await updateUser({ ...selectedUser, approvalStatus: 'rejected' });
-            Alert.alert('Driver rejected', '');
-            navigation.goBack();
-          } catch (e) {
-            Alert.alert('Error', `Error rejecting driver: ${(e as Error).message}`);
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleDeleteDriver = () => {
-    setShowActions(false);
-    Alert.alert(
-      'Delete Driver',
-      'Are you sure you want to delete this driver? This action cannot be undone. All their delivery history will be affected.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteUser(driverId);
-              Alert.alert('Success', 'Driver deleted successfully');
-              navigation.goBack();
-            } catch (e) {
-              Alert.alert('Error', `Error deleting driver: ${(e as Error).message}`);
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  if (isLoading || !selectedUser) {
+  if (isLoading)
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <Screen>
+        <LoadingState
+          title="Loading driver details"
+          message="Retrieving the driver account."
+        />
+      </Screen>
     );
-  }
+  if (!driver)
+    return (
+      <Screen>
+        <AppHeader title="Driver details" onBack={navigation.goBack} />
+        <ErrorState
+          title="Driver unavailable"
+          message={errorMessage ?? 'The requested driver could not be found.'}
+          onAction={() => loadUserById(driverId)}
+        />
+      </Screen>
+    );
 
-  const driver: AppUser = selectedUser;
+  const approval = approvalPresentation(driver.approvalStatus);
+  const recentDeliveries = deliveries?.slice(0, 5) ?? [];
+  const activeLabel = driver.isActive ? 'Active' : 'Inactive';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Pressable onPress={() => navigation.goBack()}>
-          <Text style={styles.headerBarAction}>‹ Back</Text>
-        </Pressable>
-        <Text style={textStyles.heading3}>Driver Details</Text>
-        <View style={styles.headerBarRight}>
-          <Pressable onPress={() => navigation.navigate('CreateDriver', { driverId })}>
-            <Text style={styles.headerBarAction}>✎</Text>
-          </Pressable>
-          <Pressable onPress={() => setShowActions(true)}>
-            <Text style={styles.headerBarAction}>⋮</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
-        <View style={[styles.card, shadows.card, styles.headerCard]}>
-          <View style={[styles.avatar, { backgroundColor: driver.isActive ? `${colors.success}1A` : colors.divider }]}>
-            <Text style={[styles.avatarText, { color: driver.isActive ? colors.success : colors.textSecondary }]}>{getInitials(driver.fullName)}</Text>
-          </View>
-          <Text style={styles.driverName}>{driver.fullName}</Text>
-          <View style={styles.badgeRow}>
-            <View style={[styles.badge, { backgroundColor: driver.isActive ? colors.success : colors.textSecondary }]}>
-              <Text style={styles.badgeText}>{driver.isActive ? 'Active' : 'Inactive'}</Text>
-            </View>
-            {driver.approvalStatus ? (
-              <View style={[styles.badge, { backgroundColor: approvalStatusColor(driver.approvalStatus) }]}>
-                <Text style={styles.badgeText}>{approvalStatusText(driver.approvalStatus)}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        <Text style={[textStyles.heading3, styles.sectionTitle]}>Performance Statistics</Text>
-        {!stats ? (
-          <ActivityIndicator color={colors.primary} style={styles.statsLoading} />
-        ) : (
-          <View style={styles.statsRow}>
-            <StatCard label="Total" value={stats.total} icon="🚚" color={colors.primary} />
-            <StatCard label="Active" value={stats.active} icon="⏳" color={colors.info} />
-            <StatCard label="Completed" value={stats.completed} icon="✓" color={colors.success} />
-          </View>
-        )}
-
-        <Text style={[textStyles.heading3, styles.sectionTitle]}>Contact Information</Text>
-        <View style={[styles.card, shadows.card]}>
-          <InfoRow label="Email" value={driver.email} icon="✉" />
-          {driver.phoneNumber ? <InfoRow label="Phone" value={driver.phoneNumber} icon="📞" /> : null}
-        </View>
-
-        {driver.licenseNumber || driver.vehicleInfo ? (
+    <Screen style={styles.screen} contentContainerStyle={styles.screenContent}>
+      <AppHeader
+        title="Driver details"
+        subtitle={driver.email}
+        onBack={navigation.goBack}
+        right={
           <>
-            <Text style={[textStyles.heading3, styles.sectionTitle]}>Driver Information</Text>
-            <View style={[styles.card, shadows.card]}>
-              {driver.licenseNumber ? <InfoRow label="License Number" value={driver.licenseNumber} icon="🪪" /> : null}
-              {driver.vehicleInfo ? <InfoRow label="Vehicle" value={driver.vehicleInfo} icon="🚚" /> : null}
-            </View>
+            <IconButton
+              icon="edit"
+              accessibilityLabel="Edit driver"
+              onPress={() => navigation.navigate('CreateDriver', { driverId })}
+            />
+            <IconButton
+              icon="more"
+              accessibilityLabel="More driver actions"
+              onPress={() => setActionsOpen(true)}
+            />
           </>
-        ) : null}
-
-        <Text style={[textStyles.heading3, styles.sectionTitle]}>Account Information</Text>
-        <View style={[styles.card, shadows.card]}>
-          <InfoRow label="Driver ID" value={driver.id.substring(0, 12)} icon="🔑" />
-          {driver.createdAt ? <InfoRow label="Joined" value={formatDate(driver.createdAt)} icon="📅" /> : null}
-        </View>
-
-        <Text style={[textStyles.heading3, styles.sectionTitle]}>Recent Deliveries</Text>
-        {deliveries === null ? (
-          <ActivityIndicator color={colors.primary} style={styles.statsLoading} />
-        ) : recentDeliveries.length === 0 ? (
-          <View style={[styles.card, shadows.card, styles.emptyDeliveries]}>
-            <Text style={styles.emptyDeliveriesIcon}>🚚</Text>
-            <Text style={styles.emptyDeliveriesText}>No deliveries assigned yet</Text>
+        }
+      />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <Card style={styles.profileCard}>
+          <View
+            style={[
+              styles.avatar,
+              {
+                backgroundColor: driver.isActive
+                  ? colors.verifiedMuted
+                  : colors.surfaceMuted,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                textStyles.heading2,
+                {
+                  color: driver.isActive
+                    ? colors.verified
+                    : colors.contentSecondary,
+                },
+              ]}
+            >
+              {initials(driver.fullName)}
+            </Text>
           </View>
-        ) : (
-          recentDeliveries.map((delivery) => (
-            <View key={delivery.id} style={[styles.card, shadows.card, styles.deliveryRow]}>
-              <Text style={[styles.deliveryIcon, { color: statusColor(delivery.status) }]}>{statusIcon(delivery.status)}</Text>
-              <View style={styles.deliveryTextBox}>
-                <Text style={styles.deliveryTitle}>{delivery.orderNumber ? `${delivery.orderNumber} - ${delivery.customerName}` : delivery.customerName}</Text>
-                <Text style={styles.deliverySubtitle}>{formatShortDate(delivery.scheduledDate)}</Text>
+          <Text style={textStyles.heading2}>{driver.fullName}</Text>
+          <View style={styles.chips}>
+            <StatusChip
+              label={activeLabel}
+              tone={driver.isActive ? 'success' : 'neutral'}
+              icon={driver.isActive ? 'check' : 'alert'}
+            />
+            <StatusChip label={approval.label} tone={approval.tone} />
+          </View>
+        </Card>
+
+        <Section title="Performance">
+          <View style={styles.metrics}>
+            {stats ? (
+              <>
+                <Metric
+                  label="Deliveries"
+                  value={stats.total}
+                  icon="truck"
+                  tone="info"
+                />
+                <Metric
+                  label="In transit"
+                  value={stats.active}
+                  icon="activity"
+                  tone="warning"
+                />
+                <Metric
+                  label="Completed"
+                  value={stats.completed}
+                  icon="check"
+                  tone="success"
+                />
+              </>
+            ) : (
+              <LoadingState
+                title="Loading performance"
+                message="Calculating current delivery activity."
+              />
+            )}
+          </View>
+        </Section>
+
+        <Section title="Contact information">
+          <InfoCard
+            rows={[
+              { label: 'Email', value: driver.email, icon: 'message' },
+              ...(driver.phoneNumber
+                ? [
+                    {
+                      label: 'Phone',
+                      value: driver.phoneNumber,
+                      icon: 'phone' as AppIconName,
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </Section>
+        {driver.licenseNumber || driver.vehicleInfo ? (
+          <Section title="Driver information">
+            <InfoCard
+              rows={[
+                ...(driver.licenseNumber
+                  ? [
+                      {
+                        label: 'License number',
+                        value: driver.licenseNumber,
+                        icon: 'shield' as AppIconName,
+                      },
+                    ]
+                  : []),
+                ...(driver.vehicleInfo
+                  ? [
+                      {
+                        label: 'Vehicle',
+                        value: driver.vehicleInfo,
+                        icon: 'vehicle' as AppIconName,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          </Section>
+        ) : null}
+        <Section title="Account information">
+          <InfoCard
+            rows={[
+              {
+                label: 'Driver ID',
+                value: driver.id.substring(0, 12),
+                icon: 'key',
+              },
+              {
+                label: 'Joined',
+                value: formatDate(driver.createdAt),
+                icon: 'calendar',
+              },
+            ]}
+          />
+        </Section>
+        <Section title="Recent deliveries">
+          {deliveries === null ? (
+            <LoadingState
+              title="Loading deliveries"
+              message="Retrieving this driver’s recent work."
+            />
+          ) : recentDeliveries.length === 0 ? (
+            <Card>
+              <View style={styles.noDelivery}>
+                <AppIcon
+                  name="truck"
+                  size={30}
+                  color={colors.contentSecondary}
+                />
+                <Text style={textStyles.bodyMedium}>
+                  No deliveries assigned yet.
+                </Text>
               </View>
-              <View style={[styles.deliveryStatusPill, { backgroundColor: `${statusColor(delivery.status)}1A` }]}>
-                <Text style={[styles.deliveryStatusText, { color: statusColor(delivery.status) }]}>{formatStatus(delivery.status)}</Text>
-              </View>
+            </Card>
+          ) : (
+            <View style={styles.deliveryList}>
+              {recentDeliveries.map(delivery => (
+                <DeliveryRow key={delivery.id} delivery={delivery} />
+              ))}
             </View>
-          ))
-        )}
+          )}
+        </Section>
       </ScrollView>
 
-      <Modal visible={showActions} transparent animationType="fade" onRequestClose={() => setShowActions(false)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowActions(false)}>
-          <View style={[styles.actionSheet, shadows.card]}>
-            {driver.approvalStatus === 'pending' ? (
-              <>
-                <ActionRow label="Approve Driver" icon="✓" color={colors.success} onPress={handleApproveDriver} />
-                <ActionRow label="Reject Driver" icon="✕" color={colors.error} onPress={handleRejectDriver} />
-                <View style={styles.actionSheetDivider} />
-              </>
-            ) : null}
-            <ActionRow
-              label={driver.isActive ? 'Deactivate' : 'Activate'}
-              icon={driver.isActive ? '🚫' : '✓'}
-              color={driver.isActive ? colors.warning : colors.success}
-              onPress={handleToggleStatus}
-            />
-            <ActionRow label="Delete Driver" icon="🗑" color={colors.error} onPress={handleDeleteDriver} />
+      <AppModal
+        visible={actionsOpen}
+        title="Driver actions"
+        onClose={() => setActionsOpen(false)}
+      >
+        <View style={styles.modalActions}>
+          {driver.approvalStatus === 'pending' ? (
+            <>
+              <SuccessButton
+                label="Approve driver"
+                icon="check"
+                onPress={() =>
+                  confirm(
+                    'Approve driver',
+                    `${driver.fullName} will be able to receive deliveries.`,
+                    'Approve',
+                    () =>
+                      updateDriver(
+                        { ...driver, approvalStatus: 'approved' },
+                        'Driver approved',
+                        `${driver.fullName} can now receive deliveries.`,
+                      ),
+                  )
+                }
+              />
+              <DangerButton
+                label="Reject driver"
+                icon="alert"
+                onPress={() =>
+                  confirm(
+                    'Reject driver',
+                    `${driver.fullName} will not be able to receive deliveries.`,
+                    'Reject',
+                    () =>
+                      updateDriver(
+                        { ...driver, approvalStatus: 'rejected' },
+                        'Driver rejected',
+                        `${driver.fullName} has been rejected.`,
+                      ),
+                    true,
+                  )
+                }
+              />
+            </>
+          ) : null}
+          <SecondaryButton
+            label={driver.isActive ? 'Deactivate driver' : 'Activate driver'}
+            icon={driver.isActive ? 'alert' : 'check'}
+            onPress={() =>
+              confirm(
+                driver.isActive ? 'Deactivate driver' : 'Activate driver',
+                driver.isActive
+                  ? 'This driver will no longer receive new deliveries.'
+                  : 'This driver will be able to receive new deliveries.',
+                driver.isActive ? 'Deactivate' : 'Activate',
+                () =>
+                  updateDriver(
+                    { ...driver, isActive: !driver.isActive },
+                    driver.isActive ? 'Driver deactivated' : 'Driver activated',
+                    `${driver.fullName}'s account has been updated.`,
+                  ),
+              )
+            }
+          />
+          <DangerButton
+            label="Delete driver"
+            icon="trash"
+            onPress={() =>
+              confirm(
+                'Delete driver',
+                'This cannot be undone. Delivery history may be affected.',
+                'Delete',
+                async () => {
+                  await deleteUser(driverId);
+                  Alert.alert(
+                    'Driver deleted',
+                    `${driver.fullName} has been deleted.`,
+                  );
+                  navigation.goBack();
+                },
+                true,
+              )
+            }
+          />
+        </View>
+      </AppModal>
+    </Screen>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.section}>
+      <Text style={textStyles.heading3}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+function Metric({
+  label,
+  value,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  icon: AppIconName;
+  tone: 'info' | 'success' | 'warning';
+}) {
+  const color =
+    tone === 'success'
+      ? colors.verified
+      : tone === 'warning'
+      ? colors.attention
+      : colors.active;
+  return (
+    <Card style={styles.metric}>
+      <AppIcon name={icon} size={20} color={color} />
+      <Text style={[textStyles.heading2, { color }]}>{value}</Text>
+      <Text style={[textStyles.labelSmall, styles.metricLabel]}>{label}</Text>
+    </Card>
+  );
+}
+function InfoCard({
+  rows,
+}: {
+  rows: Array<{ label: string; value: string; icon: AppIconName }>;
+}) {
+  return (
+    <Card style={styles.infoCard}>
+      {rows.map(row => (
+        <View key={row.label} style={styles.infoRow}>
+          <AppIcon name={row.icon} size={18} color={colors.contentSecondary} />
+          <View style={styles.infoCopy}>
+            <Text style={textStyles.labelSmall}>{row.label}</Text>
+            <Text selectable style={textStyles.bodyMedium}>
+              {row.value}
+            </Text>
           </View>
-        </Pressable>
-      </Modal>
-    </View>
+        </View>
+      ))}
+    </Card>
   );
 }
-
-function StatCard({ label, value, icon, color }: { label: string; value: number; icon: string; color: string }) {
+function DeliveryRow({ delivery }: { delivery: Delivery }) {
+  const presentation = deliveryPresentation(delivery.status);
   return (
-    <View style={[styles.card, shadows.card, styles.statCard]}>
-      <Text style={[styles.statIcon, { color }]}>{icon}</Text>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function InfoRow({ label, value, icon }: { label: string; value: string; icon: string }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoIcon}>{icon}</Text>
-      <View style={styles.infoTextBox}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
+    <Card style={styles.deliveryRow}>
+      <AppIcon
+        name={presentation.icon}
+        size={20}
+        color={
+          presentation.tone === 'success'
+            ? colors.verified
+            : presentation.tone === 'warning'
+            ? colors.attention
+            : presentation.tone === 'error'
+            ? colors.critical
+            : colors.active
+        }
+      />
+      <View style={styles.infoCopy}>
+        <Text numberOfLines={1} style={textStyles.label}>
+          {delivery.orderNumber
+            ? `${delivery.orderNumber} / ${delivery.customerName}`
+            : delivery.customerName}
+        </Text>
+        <Text style={textStyles.bodySmall}>
+          {formatDate(delivery.scheduledDate)}
+        </Text>
       </View>
-    </View>
-  );
-}
-
-function ActionRow({ label, icon, color, onPress }: { label: string; icon: string; color: string; onPress: () => void }) {
-  return (
-    <Pressable style={styles.actionRow} onPress={onPress}>
-      <Text style={[styles.actionRowIcon, { color }]}>{icon}</Text>
-      <Text style={[styles.actionRowLabel, { color }]}>{label}</Text>
-    </Pressable>
+      <StatusChip
+        label={presentation.label}
+        tone={presentation.tone}
+        icon={presentation.icon}
+      />
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.medium,
-    paddingVertical: spacing.medium,
+  screen: { backgroundColor: colors.canvas },
+  screenContent: { flex: 1, paddingHorizontal: 0 },
+  content: {
+    gap: spacing.large,
+    padding: spacing.medium,
+    paddingBottom: spacing.xxLarge,
   },
-  headerBarRight: { flexDirection: 'row', gap: spacing.medium },
-  headerBarAction: { color: colors.white, fontSize: 16, fontWeight: '600' },
-  content: { flex: 1 },
-  contentInner: { padding: spacing.medium, paddingBottom: spacing.xLarge },
-  card: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium },
-  headerCard: { alignItems: 'center', marginBottom: spacing.large },
-  avatar: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 32, fontWeight: 'bold' },
-  driverName: { fontSize: 20, fontWeight: 'bold', marginTop: spacing.small + 4, textAlign: 'center' },
-  badgeRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.small + 4, marginTop: spacing.small },
-  badge: { paddingHorizontal: spacing.medium, paddingVertical: 6, borderRadius: 16 },
-  badgeText: { color: colors.white, fontWeight: 'bold', fontSize: 12 },
-  sectionTitle: { marginBottom: spacing.small + 4, marginTop: spacing.small },
-  statsLoading: { marginVertical: spacing.medium },
-  statsRow: { flexDirection: 'row', gap: spacing.small + 4, marginBottom: spacing.large },
-  statCard: { flex: 1, alignItems: 'center' },
-  statIcon: { fontSize: 22 },
-  statValue: { fontSize: 24, fontWeight: 'bold', marginTop: spacing.small },
-  statLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: spacing.small + 4 },
-  infoIcon: { fontSize: 18, marginRight: spacing.small + 4, color: colors.textSecondary },
-  infoTextBox: { flex: 1 },
-  infoLabel: { fontSize: 12, color: colors.textSecondary },
-  infoValue: { fontSize: 15, fontWeight: '600', marginTop: 2 },
-  emptyDeliveries: { alignItems: 'center', paddingVertical: spacing.large },
-  emptyDeliveriesIcon: { fontSize: 40, opacity: 0.4 },
-  emptyDeliveriesText: { color: colors.textSecondary, marginTop: spacing.small },
-  deliveryRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.small },
-  deliveryIcon: { fontSize: 20, marginRight: spacing.small + 4 },
-  deliveryTextBox: { flex: 1 },
-  deliveryTitle: { fontWeight: '600', fontSize: 14 },
-  deliverySubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  deliveryStatusPill: { paddingHorizontal: spacing.small + 4, paddingVertical: 4, borderRadius: 8 },
-  deliveryStatusText: { fontSize: 11, fontWeight: 'bold' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  actionSheet: { backgroundColor: colors.card, borderTopLeftRadius: radii.cardRadius, borderTopRightRadius: radii.cardRadius, padding: spacing.medium },
-  actionSheetDivider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.small },
-  actionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.medium },
-  actionRowIcon: { fontSize: 18, marginRight: spacing.medium, width: 24, textAlign: 'center' },
-  actionRowLabel: { fontSize: 15, fontWeight: '600' },
+  profileCard: {
+    alignItems: 'center',
+    gap: spacing.small,
+    paddingVertical: spacing.large,
+  },
+  avatar: {
+    alignItems: 'center',
+    borderRadius: 40,
+    height: 80,
+    justifyContent: 'center',
+    width: 80,
+  },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.small,
+    justifyContent: 'center',
+  },
+  section: { gap: spacing.small },
+  metrics: { flexDirection: 'row', gap: spacing.small },
+  metric: {
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.xs,
+    padding: spacing.small,
+  },
+  metricLabel: { textAlign: 'center' },
+  infoCard: { gap: 0 },
+  infoRow: {
+    alignItems: 'center',
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing.small,
+    paddingVertical: spacing.small,
+  },
+  infoCopy: { flex: 1, gap: spacing.xs, minWidth: 0 },
+  noDelivery: {
+    alignItems: 'center',
+    gap: spacing.small,
+    padding: spacing.medium,
+  },
+  deliveryList: { gap: spacing.small },
+  deliveryRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.small,
+  },
+  modalActions: { gap: spacing.small },
 });

@@ -1,397 +1,517 @@
-// expects route.params: { deliveryId: string }
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share, { Social } from 'react-native-share';
+import {
+  AppIcon,
+  AppIconName,
+  AppHeader,
+  Card,
+  ErrorState,
+  IconButton,
+  LoadingState,
+  PrimaryButton,
+  Screen,
+  SecondaryButton,
+  StatusChip,
+} from '../../components/ui';
+import { DeliveryStatus } from '../../models/delivery';
+import { PodRecord } from '../../models/pod';
+import { PodRepository } from '../../repositories/podRepository';
 import { useDeliveryStore } from '../../stores/useDeliveryStore';
 import { useUserManagementStore } from '../../stores/useUserManagementStore';
-import { PodRepository } from '../../repositories/podRepository';
-import { Delivery, DeliveryStatus } from '../../models/delivery';
-import { PodRecord } from '../../models/pod';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
 
-/**
- * Ported from the ADMIN variant of lib/screens/admin/delivery_details_screen.dart
- * (verified against source on 2026-06-22) — NOT the driver variant under
- * lib/screens/driver/, which is a separate, already-ported component.
- *
- * Deviations from the Flutter source:
- * - Takes only `deliveryId` via route params and loads through useDeliveryStore
- *   (loadDeliveryById/selectedDelivery), same robustness argument as DriverDetails.tsx
- *   and the driver variant of this screen, instead of requiring the caller to pass the
- *   full Delivery object.
- * - Driver info uses useUserManagementStore.loadUserById/selectedUser instead of an
- *   inline Firestore read.
- * - Bug fix: "Copy Link" and "Share via WhatsApp" were no-op buttons in the Dart source
- *   (TODO comments, snackbar falsely claims success) — flagged in the Phase 3 inventory
- *   as dead/misleading UI. This port wires them for real: Copy Link uses
- *   @react-native-clipboard/clipboard's Clipboard.setString(), and Share uses
- *   react-native-share's shareSingle({ social: Social.WHATSAPP }), surfacing a real error
- *   if WhatsApp isn't installed rather than a false "coming soon" success toast.
- * - Third-party document thumbnails open a full-screen Modal image viewer (pinch-zoom via
- *   PinchGestureHandler is not wired — plain Image with resizeMode="contain" — since no
- *   gesture-handler viewer is installed yet; this is a acceptable a degraded-but-honest
- *   equivalent of the Dart source's InteractiveViewer pinch-to-zoom).
- * - "View POD" navigates to `PodDetails` (built later this phase, see PodDetails.tsx).
- */
 interface DeliveryDetailsProps {
   route: { params: { deliveryId: string } };
-  navigation: { navigate: (screen: string, params?: Record<string, unknown>) => void; goBack: () => void };
+  navigation: {
+    navigate: (screen: string, params?: Record<string, unknown>) => void;
+    goBack: () => void;
+  };
 }
+
+type StatusTone = 'info' | 'warning' | 'success' | 'error';
+
+const STATUS: Record<
+  DeliveryStatus,
+  { label: string; tone: StatusTone; icon: AppIconName }
+> = {
+  pending: { label: 'Pending', tone: 'warning', icon: 'calendar' },
+  inTransit: { label: 'In transit', tone: 'info', icon: 'truck' },
+  delivered: { label: 'Delivered', tone: 'success', icon: 'check' },
+  failed: { label: 'Failed', tone: 'error', icon: 'alert' },
+};
 
 const podRepository = new PodRepository();
 
-function statusColor(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return colors.warning;
-    case 'inTransit':
-      return colors.info;
-    case 'delivered':
-      return colors.success;
-    case 'failed':
-      return colors.error;
-  }
-}
-
-function statusIcon(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return '⏳';
-    case 'inTransit':
-      return '🚚';
-    case 'delivered':
-      return '✓';
-    case 'failed':
-      return '✕';
-  }
-}
-
-function statusText(status: DeliveryStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'Pending';
-    case 'inTransit':
-      return 'In Transit';
-    case 'delivered':
-      return 'Delivered';
-    case 'failed':
-      return 'Failed';
-  }
-}
-
-function formatLongDate(date: Date): string {
-  return date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+function formatDate(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function formatDateTime(date: Date): string {
-  const d = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  const t = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  return `${d} • ${t}`;
+  return `${date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })} at ${date.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`;
 }
 
-export default function DeliveryDetails({ route, navigation }: DeliveryDetailsProps) {
+/** Evidence-first admin delivery review. */
+export default function DeliveryDetails({
+  route,
+  navigation,
+}: DeliveryDetailsProps) {
   const { deliveryId } = route.params;
-  const selectedDelivery = useDeliveryStore((s) => s.selectedDelivery);
-  const isLoading = useDeliveryStore((s) => s.isLoading);
-  const loadDeliveryById = useDeliveryStore((s) => s.loadDeliveryById);
-  const deleteDelivery = useDeliveryStore((s) => s.deleteDelivery);
-
-  const driverUser = useUserManagementStore((s) => s.selectedUser);
-  const loadUserById = useUserManagementStore((s) => s.loadUserById);
-
+  const selectedDelivery = useDeliveryStore(state => state.selectedDelivery);
+  const isLoading = useDeliveryStore(state => state.isLoading);
+  const errorMessage = useDeliveryStore(state => state.errorMessage);
+  const loadDeliveryById = useDeliveryStore(state => state.loadDeliveryById);
+  const deleteDelivery = useDeliveryStore(state => state.deleteDelivery);
+  const driverUser = useUserManagementStore(state => state.selectedUser);
+  const loadUserById = useUserManagementStore(state => state.loadUserById);
   const [pod, setPod] = useState<PodRecord | null | undefined>(undefined);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+
+  const delivery =
+    selectedDelivery?.id === deliveryId ? selectedDelivery : null;
 
   useEffect(() => {
     loadDeliveryById(deliveryId);
   }, [deliveryId, loadDeliveryById]);
-
-  const delivery: Delivery | null = selectedDelivery?.id === deliveryId ? selectedDelivery : null;
-
   useEffect(() => {
     if (!delivery) return;
-    if (!delivery.isThirdPartyTransport) {
-      loadUserById(delivery.driverId);
-    }
-    if (delivery.status === 'delivered') {
-      podRepository.getPodById(delivery.id).then(setPod);
-    } else {
+    if (!delivery.isThirdPartyTransport) loadUserById(delivery.driverId);
+    if (delivery.status !== 'delivered') {
       setPod(null);
+      return;
     }
+    setPod(undefined);
+    podRepository
+      .getPodById(delivery.id)
+      .then(setPod)
+      .catch(() => setPod(null));
   }, [delivery, loadUserById]);
 
-  const handleCopyLink = (uploadToken: string) => {
-    Clipboard.setString(`https://podsafe.app/upload/${uploadToken}`);
-    Alert.alert('Copied', 'Link copied to clipboard');
-  };
-
-  const handleShareWhatsApp = async (uploadToken: string) => {
-    try {
-      await Share.shareSingle({
-        social: Social.Whatsapp,
-        message: `https://podsafe.app/upload/${uploadToken}`,
-      });
-    } catch (e) {
-      Alert.alert('Error', `Could not open WhatsApp: ${(e as Error).message}`);
-    }
-  };
-
-  const handleDelete = () => {
-    Alert.alert('Delete Delivery', 'Are you sure you want to delete this delivery? This action cannot be undone.', [
+  const handleDelete = () =>
+    Alert.alert('Delete delivery', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          const ok = await deleteDelivery(deliveryId);
-          if (ok) {
-            Alert.alert('Success', 'Delivery deleted successfully');
-            navigation.goBack();
-          } else {
-            Alert.alert('Error', 'Error deleting delivery');
-          }
+          if (await deleteDelivery(deliveryId)) navigation.goBack();
+          else
+            Alert.alert(
+              'Unable to delete',
+              useDeliveryStore.getState().errorMessage ?? 'Try again.',
+            );
         },
       },
     ]);
+  const copyLink = (token: string) => {
+    Clipboard.setString(`https://podsafe.app/upload/${token}`);
+    Alert.alert('Link copied', 'The external upload link is ready to share.');
+  };
+  const shareLink = async (token: string) => {
+    try {
+      await Share.shareSingle({
+        social: Social.Whatsapp,
+        message: `https://podsafe.app/upload/${token}`,
+      });
+    } catch (error) {
+      Alert.alert('Unable to share', (error as Error).message);
+    }
   };
 
-  if (isLoading || !delivery) {
+  if (isLoading)
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <Screen>
+        <LoadingState
+          title="Loading delivery details"
+          message="Retrieving the delivery record."
+        />
+      </Screen>
     );
-  }
+  if (!delivery)
+    return (
+      <Screen>
+        <ErrorState
+          title="Delivery unavailable"
+          message={errorMessage ?? 'The requested delivery could not be found.'}
+          onAction={() => loadDeliveryById(deliveryId)}
+        />
+      </Screen>
+    );
 
+  const status = STATUS[delivery.status];
   return (
-    <View style={styles.container}>
-      <View style={styles.headerBar}>
-        <Pressable onPress={() => navigation.goBack()}>
-          <Text style={styles.headerBarAction}>‹ Back</Text>
-        </Pressable>
-        <Text style={textStyles.heading3}>Delivery Details</Text>
-        <View style={styles.headerBarRight}>
-          <Pressable onPress={() => navigation.navigate('CreateDelivery', { deliveryId: delivery.id })}>
-            <Text style={styles.headerBarAction}>✎</Text>
-          </Pressable>
-          <Pressable onPress={handleDelete}>
-            <Text style={styles.headerBarAction}>🗑</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentInner}>
-        <View style={styles.statusBadgeRow}>
-          <View style={[styles.statusBadge, { borderColor: statusColor(delivery.status), backgroundColor: `${statusColor(delivery.status)}1A` }]}>
-            <Text style={[styles.statusBadgeIcon, { color: statusColor(delivery.status) }]}>{statusIcon(delivery.status)}</Text>
-            <Text style={[styles.statusBadgeText, { color: statusColor(delivery.status) }]}>{statusText(delivery.status)}</Text>
-          </View>
-        </View>
-
-        <Text style={[textStyles.heading3, styles.sectionTitle]}>Customer Information</Text>
-        <View style={[styles.card, shadows.card]}>
-          <InfoRow label="Name" value={delivery.customerName} />
-          <InfoRow label="Address" value={delivery.customerAddress} />
-          {delivery.customerPhone ? <InfoRow label="Phone" value={delivery.customerPhone} /> : null}
-        </View>
-
-        <Text style={[textStyles.heading3, styles.sectionTitle]}>Delivery Information</Text>
-        <View style={[styles.card, shadows.card]}>
-          {delivery.orderNumber ? <InfoRow label="Order Number" value={delivery.orderNumber} /> : null}
-          <InfoRow label="Invoice Number" value={delivery.invoiceNumber} />
-          {delivery.vehicleUsed ? <InfoRow label="Vehicle Used" value={delivery.vehicleUsed} /> : null}
-          <InfoRow label="Scheduled Date" value={formatLongDate(delivery.scheduledDate)} />
-          <InfoRow label="Created" value={formatDateTime(delivery.createdAt)} />
-          {delivery.deliveredAt ? <InfoRow label="Delivered" value={formatDateTime(delivery.deliveredAt)} /> : null}
-        </View>
-
-        {delivery.isThirdPartyTransport ? (
+    <Screen style={styles.screen} contentContainerStyle={styles.screenContent}>
+      <AppHeader
+        title="Delivery details"
+        subtitle={`Invoice ${delivery.invoiceNumber}`}
+        onBack={navigation.goBack}
+        right={
           <>
-            <Text style={[textStyles.heading3, styles.sectionTitle]}>Third-Party Transport</Text>
-            <View style={[styles.card, shadows.card, styles.thirdPartyCard]}>
-              <View style={styles.thirdPartyHeaderRow}>
-                <Text style={styles.thirdPartyHeaderIcon}>🚚</Text>
-                <Text style={styles.thirdPartyHeaderText}>External Transport Provider</Text>
+            <IconButton
+              icon="edit"
+              accessibilityLabel="Edit delivery"
+              onPress={() =>
+                navigation.navigate('CreateDelivery', {
+                  deliveryId: delivery.id,
+                })
+              }
+            />
+            <IconButton
+              icon="trash"
+              accessibilityLabel="Delete delivery"
+              color={colors.critical}
+              onPress={handleDelete}
+            />
+          </>
+        }
+      />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.hero}>
+          <View style={styles.heroCopy}>
+            <Text style={textStyles.heading2}>{delivery.customerName}</Text>
+            <Text style={textStyles.bodyMedium}>
+              {delivery.customerAddress}
+            </Text>
+          </View>
+          <StatusChip
+            label={status.label}
+            tone={status.tone}
+            icon={status.icon}
+          />
+        </View>
+        <Section title="Customer">
+          <InfoCard
+            rows={[
+              ['Address', delivery.customerAddress],
+              ['Phone', delivery.customerPhone ?? 'Not provided'],
+              ['Customer number', delivery.customerNumber ?? 'Not recorded'],
+            ]}
+          />
+        </Section>
+        <Section title="Schedule and references">
+          <InfoCard
+            rows={[
+              ['Invoice', delivery.invoiceNumber],
+              ['Order', delivery.orderNumber ?? 'Not recorded'],
+              ['Scheduled', formatDate(delivery.scheduledDate)],
+              ['Created', formatDateTime(delivery.createdAt)],
+              ...(delivery.deliveredAt
+                ? [
+                    ['Delivered', formatDateTime(delivery.deliveredAt)] as [
+                      string,
+                      string,
+                    ],
+                  ]
+                : []),
+            ]}
+          />
+        </Section>
+        {delivery.isThirdPartyTransport ? (
+          <Section title="External transport">
+            <Card style={styles.transportCard}>
+              <View style={styles.transportHeading}>
+                <AppIcon name="truck" size={22} color={colors.contentPrimary} />
+                <Text style={textStyles.heading3}>
+                  {delivery.thirdPartyProviderName ?? 'Transport provider'}
+                </Text>
               </View>
-              <View style={styles.divider} />
-              <InfoRow label="Provider" value={delivery.thirdPartyProviderName ?? 'N/A'} />
-              {delivery.thirdPartyDriverName ? <InfoRow label="Driver" value={delivery.thirdPartyDriverName} /> : null}
-              {delivery.thirdPartyDriverPhone ? <InfoRow label="Phone" value={delivery.thirdPartyDriverPhone} /> : null}
-              {delivery.thirdPartyVehicleInfo ? <InfoRow label="Vehicle" value={delivery.thirdPartyVehicleInfo} /> : null}
-
+              <InfoCard
+                rows={[
+                  ['Driver', delivery.thirdPartyDriverName ?? 'Not assigned'],
+                  ['Phone', delivery.thirdPartyDriverPhone ?? 'Not provided'],
+                  ['Vehicle', delivery.thirdPartyVehicleInfo ?? 'Not recorded'],
+                ]}
+              />
               {delivery.uploadToken ? (
-                <>
-                  <View style={styles.divider} />
-                  <Text style={styles.uploadLinkLabel}>🔗 Upload Link</Text>
-                  <View style={styles.uploadLinkBox}>
-                    <Text selectable style={styles.uploadLinkText}>{`https://podsafe.app/upload/${delivery.uploadToken}`}</Text>
+                <View style={styles.uploadActions}>
+                  <Text style={textStyles.label}>External POD upload</Text>
+                  <Text
+                    selectable
+                    style={styles.uploadLink}
+                  >{`https://podsafe.app/upload/${delivery.uploadToken}`}</Text>
+                  <View style={styles.actionRow}>
+                    <SecondaryButton
+                      label="Copy link"
+                      icon="copy"
+                      onPress={() => copyLink(delivery.uploadToken!)}
+                    />
+                    <SecondaryButton
+                      label="Share link"
+                      icon="link"
+                      onPress={() => shareLink(delivery.uploadToken!)}
+                    />
                   </View>
-                  <View style={styles.uploadLinkButtonRow}>
-                    <Pressable style={styles.primaryButton} onPress={() => handleCopyLink(delivery.uploadToken!)}>
-                      <Text style={textStyles.buttonText}>📋 Copy Link</Text>
-                    </Pressable>
-                    <Pressable style={styles.secondaryButton} onPress={() => handleShareWhatsApp(delivery.uploadToken!)}>
-                      <Text style={styles.secondaryButtonText}>↗ Share</Text>
-                    </Pressable>
-                  </View>
-                </>
+                </View>
               ) : null}
-
-              {delivery.thirdPartyDocs && delivery.thirdPartyDocs.length > 0 ? (
-                <>
-                  <View style={styles.divider} />
-                  <Text style={styles.docsUploadedLabel}>✓ Documents Uploaded ({delivery.thirdPartyDocs.length})</Text>
+              {delivery.thirdPartyDocs?.length ? (
+                <View style={styles.documents}>
+                  <Text style={textStyles.label}>Uploaded documents</Text>
                   <View style={styles.thumbnailRow}>
-                    {delivery.thirdPartyDocs.map((url) => (
-                      <Pressable key={url} onPress={() => setFullScreenImage(url)}>
-                        <Image source={{ uri: url }} style={styles.thumbnail} resizeMode="cover" />
-                      </Pressable>
+                    {delivery.thirdPartyDocs.map(url => (
+                      <IconButton
+                        key={url}
+                        icon="image"
+                        accessibilityLabel="Open uploaded document"
+                        onPress={() => setFullScreenImage(url)}
+                      />
                     ))}
                   </View>
-                </>
-              ) : null}
-            </View>
-          </>
-        ) : (
-          <>
-            <Text style={[textStyles.heading3, styles.sectionTitle]}>Driver Information</Text>
-            {!driverUser ? (
-              <ActivityIndicator color={colors.primary} style={styles.statsLoading} />
-            ) : (
-              <View style={[styles.card, shadows.card]}>
-                <InfoRow label="Name" value={driverUser.fullName} />
-                {driverUser.email ? <InfoRow label="Email" value={driverUser.email} /> : null}
-                {driverUser.vehicleInfo ? <InfoRow label="Vehicle Registration" value={driverUser.vehicleInfo} /> : null}
-              </View>
-            )}
-          </>
-        )}
-
-        <Text style={[textStyles.heading3, styles.sectionTitle]}>Delivery Items ({delivery.items.length})</Text>
-        {delivery.items.map((item, i) => (
-          <View key={i} style={[styles.card, shadows.card, styles.itemRow]}>
-            <View style={styles.itemQtyBadge}>
-              <Text style={styles.itemQtyText}>{item.quantity}</Text>
-            </View>
-            <View style={styles.itemTextBox}>
-              <Text style={styles.itemDescription}>{item.description}</Text>
-              {item.unit ? <Text style={styles.itemUnit}>Unit: {item.unit}</Text> : null}
-            </View>
-          </View>
-        ))}
-
-        {delivery.notes ? (
-          <>
-            <Text style={[textStyles.heading3, styles.sectionTitle]}>Notes</Text>
-            <View style={[styles.card, shadows.card]}>
-              <Text style={styles.notesText}>{delivery.notes}</Text>
-            </View>
-          </>
-        ) : null}
-
-        {delivery.status === 'delivered' ? (
-          <>
-            <Text style={[textStyles.heading3, styles.sectionTitle]}>Proof of Delivery</Text>
-            {pod === undefined ? (
-              <ActivityIndicator color={colors.primary} style={styles.statsLoading} />
-            ) : pod ? (
-              <Pressable style={[styles.card, shadows.card, styles.podRow]} onPress={() => navigation.navigate('PodDetails', { deliveryId: delivery.id })}>
-                <Text style={styles.podIcon}>🧾</Text>
-                <View style={styles.podTextBox}>
-                  <Text style={styles.podTitle}>POD Available</Text>
-                  <Text style={styles.podSubtitle}>Tap to view signature, photo, and GPS</Text>
                 </View>
-                <Text style={styles.podChevron}>›</Text>
-              </Pressable>
+              ) : null}
+            </Card>
+          </Section>
+        ) : (
+          <Section title="Assigned driver">
+            {driverUser ? (
+              <InfoCard
+                rows={[
+                  ['Driver', driverUser.fullName],
+                  ['Email', driverUser.email ?? 'Not recorded'],
+                  [
+                    'Vehicle',
+                    driverUser.vehicleInfo ??
+                      delivery.vehicleUsed ??
+                      'Not assigned',
+                  ],
+                ]}
+              />
             ) : (
-              <View style={[styles.card, shadows.card, styles.podRow]}>
-                <Text style={styles.podIconMuted}>ⓘ</Text>
-                <Text style={styles.podSubtitle}>No POD available for this delivery</Text>
-              </View>
+              <LoadingState
+                title="Loading driver"
+                message="Retrieving assignment details."
+              />
             )}
-          </>
+          </Section>
+        )}
+        <Section title={`Delivery items (${delivery.items.length})`}>
+          <View style={styles.itemList}>
+            {delivery.items.map((item, index) => (
+              <Card
+                key={`${item.description}-${index}`}
+                style={styles.itemCard}
+              >
+                <View style={styles.quantity}>
+                  <Text style={textStyles.label}>{item.quantity}</Text>
+                </View>
+                <View style={styles.itemCopy}>
+                  <Text style={textStyles.label}>{item.description}</Text>
+                  <Text style={textStyles.bodySmall}>
+                    {[
+                      item.unit,
+                      item.unitPrice != null
+                        ? `R${item.unitPrice.toFixed(2)} each`
+                        : undefined,
+                    ]
+                      .filter(Boolean)
+                      .join(' / ') || 'No unit or price recorded'}
+                  </Text>
+                </View>
+              </Card>
+            ))}
+          </View>
+        </Section>
+        {delivery.notes ? (
+          <Section title="Notes">
+            <Card>
+              <Text style={textStyles.bodyMedium}>{delivery.notes}</Text>
+            </Card>
+          </Section>
+        ) : null}
+        {delivery.status === 'delivered' ? (
+          <Section title="Proof of delivery">
+            {pod === undefined ? (
+              <LoadingState
+                title="Loading proof"
+                message="Retrieving the evidence record."
+              />
+            ) : pod ? (
+              <Card style={styles.proofCard}>
+                <View style={styles.proofIcon}>
+                  <AppIcon name="signature" size={26} color={colors.verified} />
+                </View>
+                <View style={styles.itemCopy}>
+                  <Text style={textStyles.heading3}>Evidence available</Text>
+                  <Text style={textStyles.bodySmall}>
+                    Review signature, photos, and location evidence.
+                  </Text>
+                </View>
+                <PrimaryButton
+                  label="Open proof"
+                  icon="arrowRight"
+                  onPress={() =>
+                    navigation.navigate('PodDetails', {
+                      deliveryId: delivery.id,
+                    })
+                  }
+                />
+              </Card>
+            ) : (
+              <Card style={styles.proofCard}>
+                <AppIcon name="alert" size={26} color={colors.attention} />
+                <Text style={textStyles.bodyMedium}>
+                  No proof has been recorded for this delivery yet.
+                </Text>
+              </Card>
+            )}
+          </Section>
         ) : null}
       </ScrollView>
-
-      <Modal visible={fullScreenImage != null} transparent animationType="fade" onRequestClose={() => setFullScreenImage(null)}>
-        <View style={styles.imageModalBackdrop}>
-          {fullScreenImage ? <Image source={{ uri: fullScreenImage }} style={styles.fullScreenImage} resizeMode="contain" /> : null}
-          <Pressable style={styles.imageModalClose} onPress={() => setFullScreenImage(null)}>
-            <Text style={styles.imageModalCloseText}>✕</Text>
-          </Pressable>
+      <Modal
+        visible={Boolean(fullScreenImage)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFullScreenImage(null)}
+      >
+        <View style={styles.imageModal}>
+          <View style={styles.imageModalHeader}>
+            <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>
+              Uploaded document
+            </Text>
+            <IconButton
+              icon="close"
+              accessibilityLabel="Close document"
+              color={colors.onPrimary}
+              onPress={() => setFullScreenImage(null)}
+            />
+          </View>
+          {fullScreenImage ? (
+            <Image
+              source={{ uri: fullScreenImage }}
+              resizeMode="contain"
+              style={styles.fullImage}
+            />
+          ) : null}
         </View>
       </Modal>
-    </View>
+    </Screen>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+    <View style={styles.section}>
+      <Text style={textStyles.heading3}>{title}</Text>
+      {children}
     </View>
+  );
+}
+function InfoCard({ rows }: { rows: Array<[string, string]> }) {
+  return (
+    <Card style={styles.infoCard}>
+      {rows.map(([label, value]) => (
+        <View key={label} style={styles.infoRow}>
+          <Text style={textStyles.labelSmall}>{label}</Text>
+          <Text selectable style={[textStyles.bodyMedium, styles.infoValue]}>
+            {value}
+          </Text>
+        </View>
+      ))}
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  headerBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.medium,
-    paddingVertical: spacing.medium,
+  screen: { backgroundColor: colors.canvas },
+  screenContent: { flex: 1, paddingHorizontal: 0 },
+  content: {
+    gap: spacing.large,
+    padding: spacing.medium,
+    paddingBottom: spacing.xxLarge,
   },
-  headerBarRight: { flexDirection: 'row', gap: spacing.medium },
-  headerBarAction: { color: colors.white, fontSize: 16, fontWeight: '600' },
-  content: { flex: 1 },
-  contentInner: { padding: spacing.medium, paddingBottom: spacing.xLarge },
-  statusBadgeRow: { alignItems: 'center', marginBottom: spacing.large },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: spacing.small, borderWidth: 2, borderRadius: 24, paddingHorizontal: spacing.large, paddingVertical: spacing.small + 4 },
-  statusBadgeIcon: { fontSize: 18 },
-  statusBadgeText: { fontWeight: 'bold', fontSize: 16 },
-  card: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium, marginBottom: spacing.large },
-  sectionTitle: { marginBottom: spacing.small + 4 },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: spacing.small },
-  infoLabel: { width: 120, color: colors.textSecondary, fontWeight: '500' },
-  infoValue: { flex: 1, fontWeight: '600' },
-  thirdPartyCard: { backgroundColor: `${colors.warning}0D` },
-  thirdPartyHeaderRow: { flexDirection: 'row', alignItems: 'center' },
-  thirdPartyHeaderIcon: { fontSize: 18, marginRight: spacing.small },
-  thirdPartyHeaderText: { fontSize: 16, fontWeight: 'bold', color: colors.warning },
-  divider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.medium },
-  uploadLinkLabel: { fontWeight: 'bold', fontSize: 14, marginBottom: spacing.small },
-  uploadLinkBox: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.divider, borderRadius: radii.borderRadius, padding: spacing.small + 4 },
-  uploadLinkText: { fontSize: 12, fontFamily: 'monospace' },
-  uploadLinkButtonRow: { flexDirection: 'row', gap: spacing.small, marginTop: spacing.small + 4 },
-  primaryButton: { backgroundColor: colors.primary, borderRadius: radii.buttonRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small + 4 },
-  secondaryButton: { borderWidth: 1, borderColor: colors.primary, borderRadius: radii.buttonRadius, paddingHorizontal: spacing.medium, paddingVertical: spacing.small + 4 },
-  secondaryButtonText: { color: colors.primary, fontWeight: '600' },
-  docsUploadedLabel: { fontWeight: 'bold', color: colors.success, marginBottom: spacing.small },
+  hero: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.medium,
+    justifyContent: 'space-between',
+  },
+  heroCopy: { flex: 1, gap: spacing.xs, minWidth: 0 },
+  section: { gap: spacing.small },
+  infoCard: { gap: 0 },
+  infoRow: {
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: spacing.xs,
+    paddingVertical: spacing.small,
+  },
+  infoValue: { color: colors.contentPrimary },
+  transportCard: { gap: spacing.medium },
+  transportHeading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.small,
+  },
+  uploadActions: { gap: spacing.small },
+  uploadLink: {
+    ...textStyles.bodySmall,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: spacing.xs,
+    color: colors.shell,
+    padding: spacing.small,
+  },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small },
+  documents: { gap: spacing.small },
   thumbnailRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small },
-  thumbnail: { width: 80, height: 80, borderRadius: 8, borderWidth: 1, borderColor: colors.divider },
-  statsLoading: { marginVertical: spacing.medium },
-  itemRow: { flexDirection: 'row', alignItems: 'center' },
-  itemQtyBadge: { width: 36, height: 36, borderRadius: 18, backgroundColor: `${colors.primary}1A`, alignItems: 'center', justifyContent: 'center', marginRight: spacing.small + 4 },
-  itemQtyText: { color: colors.primary, fontWeight: 'bold' },
-  itemTextBox: { flex: 1 },
-  itemDescription: { fontWeight: '600' },
-  itemUnit: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  notesText: { fontSize: 15 },
-  podRow: { flexDirection: 'row', alignItems: 'center' },
-  podIcon: { fontSize: 28, color: colors.success, marginRight: spacing.medium },
-  podIconMuted: { fontSize: 28, color: colors.divider, marginRight: spacing.medium },
-  podTextBox: { flex: 1 },
-  podTitle: { fontSize: 16, fontWeight: '600' },
-  podSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  podChevron: { fontSize: 22, color: colors.textSecondary },
-  imageModalBackdrop: { flex: 1, backgroundColor: 'black', alignItems: 'center', justifyContent: 'center' },
-  fullScreenImage: { width: '100%', height: '100%' },
-  imageModalClose: { position: 'absolute', top: 16, right: 16, padding: spacing.small },
-  imageModalCloseText: { color: colors.white, fontSize: 28 },
+  itemList: { gap: spacing.small },
+  itemCard: { alignItems: 'center', flexDirection: 'row', gap: spacing.small },
+  quantity: {
+    alignItems: 'center',
+    backgroundColor: colors.activeMuted,
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  itemCopy: { flex: 1, gap: spacing.xs, minWidth: 0 },
+  proofCard: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.medium,
+  },
+  proofIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.verifiedMuted,
+    borderRadius: 20,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  imageModal: { backgroundColor: colors.shell, flex: 1 },
+  imageModalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.medium,
+  },
+  fullImage: { flex: 1, width: '100%' },
 });

@@ -1,19 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, ImageStyle, Pressable, StyleProp, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  ImageStyle,
+  StyleProp,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import storage from '@react-native-firebase/storage';
+import { AppIcon, SecondaryButton } from './ui';
 import { colors, spacing } from '../theme/tokens';
+import { textStyles } from '../theme/textStyles';
 
-/**
- * Ported from lib/widgets/firebase_storage_image.dart (verified against source on
- * 2026-06-23). Resolves gs:// Storage URLs to a download URL before rendering, with
- * loading/error/retry states.
- *
- * Deviation: RN's <Image> has no loadingBuilder/errorBuilder equivalent (no progress
- * fraction is exposed either), so loading is a plain ActivityIndicator and the
- * encoding-error-vs-generic-error distinction from Image.network's errorBuilder is
- * collapsed into one generic "failed to load" state — RN's onError doesn't expose a
- * typed error to distinguish them.
- */
 interface FirebaseStorageImageProps {
   imageUrl: string;
   style?: StyleProp<ImageStyle>;
@@ -24,7 +23,16 @@ interface FirebaseStorageImageProps {
   resizeMode?: 'contain' | 'cover';
 }
 
-export default function FirebaseStorageImage({ imageUrl, style, width, height, placeholder, showErrorDetails = true, resizeMode = 'contain' }: FirebaseStorageImageProps) {
+/** Resolves a Firebase Storage URL and renders explicit loading and retry states. */
+export default function FirebaseStorageImage({
+  imageUrl,
+  style,
+  width,
+  height,
+  placeholder,
+  showErrorDetails = true,
+  resizeMode = 'contain',
+}: FirebaseStorageImageProps) {
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,14 +43,12 @@ export default function FirebaseStorageImage({ imageUrl, style, width, height, p
     setError(null);
     setImageFailed(false);
     try {
-      let url = imageUrl;
-      if (url.startsWith('gs://')) {
-        const ref = storage().refFromURL(url);
-        url = await ref.getDownloadURL();
-      }
-      setResolvedUrl(url);
-    } catch (e) {
-      setError((e as Error).message);
+      const resolved = imageUrl.startsWith('gs://')
+        ? await storage().refFromURL(imageUrl).getDownloadURL()
+        : imageUrl;
+      setResolvedUrl(resolved);
+    } catch (caught) {
+      setError((caught as Error).message);
     } finally {
       setIsLoading(false);
     }
@@ -56,26 +62,29 @@ export default function FirebaseStorageImage({ imageUrl, style, width, height, p
     return (
       placeholder ?? (
         <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={styles.loadingText}>Loading image...</Text>
+          <ActivityIndicator color={colors.active} />
+          <Text style={textStyles.bodySmall}>Loading evidence</Text>
         </View>
       )
-    ) as React.ReactElement;
+    );
   }
 
   if (error || !resolvedUrl || imageFailed) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorIcon}>🖼️</Text>
-        <Text style={styles.errorTitle}>Failed to load image</Text>
+        <AppIcon name="image" size={32} color={colors.critical} />
+        <Text style={textStyles.label}>Evidence image unavailable</Text>
         {showErrorDetails && error ? (
-          <Text style={styles.errorDetail} numberOfLines={3}>
+          <Text numberOfLines={3} style={[textStyles.bodySmall, styles.error]}>
             {error}
           </Text>
         ) : null}
-        <Pressable style={styles.retryButton} onPress={resolveImageUrl}>
-          <Text style={styles.retryText}>↻ Retry</Text>
-        </Pressable>
+        <SecondaryButton
+          label="Try again"
+          icon="activity"
+          onPress={resolveImageUrl}
+          style={styles.retry}
+        />
       </View>
     );
   }
@@ -91,11 +100,12 @@ export default function FirebaseStorageImage({ imageUrl, style, width, height, p
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: 'center', justifyContent: 'center', padding: spacing.medium },
-  loadingText: { color: colors.textSecondary, fontSize: 12, marginTop: spacing.small },
-  errorIcon: { fontSize: 40 },
-  errorTitle: { color: colors.error, fontWeight: '600', marginTop: spacing.small },
-  errorDetail: { color: colors.textSecondary, fontSize: 11, marginTop: spacing.small, textAlign: 'center', paddingHorizontal: spacing.medium },
-  retryButton: { marginTop: spacing.small + 4, paddingHorizontal: spacing.medium, paddingVertical: spacing.small },
-  retryText: { color: colors.primary, fontWeight: '600' },
+  center: {
+    alignItems: 'center',
+    gap: spacing.small,
+    justifyContent: 'center',
+    padding: spacing.medium,
+  },
+  error: { textAlign: 'center' },
+  retry: { marginTop: spacing.xs },
 });

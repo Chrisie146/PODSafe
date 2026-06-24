@@ -673,7 +673,7 @@ export default function AnalyticsDashboardDesktop({ navigation: _navigation }: A
     <View style={styles.container}>
       <View style={styles.headerBar}>
         <View style={styles.headerBarLeft}>
-          <Text style={textStyles.heading3}>Analytics &amp; Reports</Text>
+          <Text style={[textStyles.heading3, { color: colors.onPrimary }]}>Analytics &amp; Reports</Text>
           <Text style={styles.desktopBadge}>Desktop</Text>
         </View>
         <View style={styles.headerBarRight}>
