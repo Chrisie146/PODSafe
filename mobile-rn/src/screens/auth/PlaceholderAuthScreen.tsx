@@ -1,25 +1,37 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../../theme/tokens';
-import { textStyles } from '../../theme/textStyles';
+import { StyleSheet, View } from 'react-native';
+import { Screen, EmptyState, AppIconName } from '../../components/ui';
+import { spacing } from '../../theme/tokens';
 
 /**
- * Shared shell for the auth screens not yet fully ported in Phase 1
+ * Shared shell for the auth screens whose product flows are not yet ported
  * (signup, company-registration, driver-registration, invite-registration,
- * pending-approval). Navigation routes already exist so the rest of the auth
- * flow can be wired against them; full forms land alongside the relevant
- * phase in the vault's "04 Inventory - Screens" checklist.
+ * pending-approval). The routes already exist so the rest of the auth flow can be
+ * wired against them; full forms land when each product flow is ready.
+ *
+ * UI/UX Refresh Phase 5: per the workflow guardrail we keep these as deliberate
+ * placeholders, but give them a coherent design-system treatment (warm canvas +
+ * branded empty state) instead of a raw "not yet ported" line.
  */
-export default function PlaceholderAuthScreen({ title }: { title: string }) {
+export default function PlaceholderAuthScreen({
+  title,
+  message = 'This flow is coming soon. For now, contact your administrator to get set up.',
+  icon = 'info',
+}: {
+  title: string;
+  message?: string;
+  icon?: AppIconName;
+}) {
   return (
-    <View style={styles.container}>
-      <Text style={textStyles.heading2}>{title}</Text>
-      <Text style={[textStyles.bodyMedium, styles.note]}>Not yet ported — Phase 1 scaffold placeholder.</Text>
-    </View>
+    <Screen contentContainerStyle={styles.content}>
+      <View style={styles.center}>
+        <EmptyState title={title} message={message} icon={icon} />
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, backgroundColor: colors.background },
-  note: { marginTop: 8, color: colors.textSecondary },
+  content: { flex: 1 },
+  center: { flex: 1, justifyContent: 'center', paddingHorizontal: spacing.medium },
 });

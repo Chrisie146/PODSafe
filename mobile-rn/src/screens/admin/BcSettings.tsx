@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useBcStore } from '../../stores/useBcStore';
 import { BcConfig } from '../../models/bcConfig';
-import { colors, spacing, radii, shadows } from '../../theme/tokens';
+import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
+import { Screen, Card, FormField, PrimaryButton, SecondaryButton, IconButton, LoadingState, AppIcon } from '../../components/ui';
 
 /**
  * Ported from lib/screens/admin/bc_settings_screen.dart (verified against source on
@@ -23,6 +24,10 @@ import { textStyles } from '../../theme/textStyles';
  *   settings.
  * - Client secret is never persisted to Firestore here either (matches the Dart
  *   source/BCConfig model — there's no clientSecret field on the model at all).
+ *
+ * UI/UX Refresh Phase 5: rebuilt on the shared primitives (Screen/Card/FormField/
+ * PrimaryButton); emoji section/button glyphs replaced with SVG icons. Behaviour,
+ * validation, and store calls unchanged.
  */
 const DEFAULT_BC_API_URL = 'https://api.businesscentral.dynamics.com/v2.0';
 const ENVIRONMENTS = ['production', 'sandbox'];
@@ -145,8 +150,8 @@ export default function BcSettings() {
       setTestSuccess(success);
       setTestResult(
         success
-          ? 'Connection successful! ✓\n\nYour Business Central credentials are valid and the API is accessible.'
-          : 'Connection failed ✗\n\nPlease check:\n• Tenant ID is correct\n• Client ID is correct\n• Client Secret is correct\n• BC API URL is correct\n• Azure AD app has BC API permissions',
+          ? 'Connection successful.\n\nYour Business Central credentials are valid and the API is accessible.'
+          : 'Connection failed.\n\nPlease check:\n• Tenant ID is correct\n• Client ID is correct\n• Client Secret is correct\n• BC API URL is correct\n• Azure AD app has BC API permissions',
       );
     } catch (e) {
       setTestSuccess(false);
@@ -156,53 +161,62 @@ export default function BcSettings() {
 
   if (isLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <Screen>
+        <LoadingState title="Loading configuration" />
+      </Screen>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={[styles.headerCard, shadows.card]}>
+    <Screen scroll keyboardAvoiding contentContainerStyle={styles.content}>
+      <Card padding="spacious" style={styles.headerCard}>
         <View style={styles.headerRow}>
           <View style={styles.headerTextBox}>
             <Text style={textStyles.heading3}>Microsoft Dynamics 365 Business Central</Text>
             <Text style={styles.headerSubtitle}>Sync sales orders, customers, and delivery status in real-time</Text>
           </View>
-          <Switch value={isEnabled} onValueChange={setIsEnabled} />
+          <Switch
+            value={isEnabled}
+            onValueChange={setIsEnabled}
+            trackColor={{ true: colors.active, false: colors.border }}
+          />
         </View>
-      </View>
+      </Card>
 
-      <View style={[styles.section, shadows.card]}>
-        <Text style={textStyles.heading3}>⚙ Connection Settings</Text>
+      <Card padding="spacious" style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <AppIcon name="settings" size={20} color={colors.shell} />
+          <Text style={textStyles.heading3}>Connection Settings</Text>
+        </View>
 
-        <FormField label="Azure AD Tenant ID *" placeholder="Your Azure Active Directory tenant ID" value={tenantId} onChangeText={setTenantId} />
-        <FormField label="Client ID (Application ID) *" placeholder="Azure AD application client ID" value={clientId} onChangeText={setClientId} />
+        <FormField label="Azure AD Tenant ID *" placeholder="Your Azure Active Directory tenant ID" value={tenantId} onChangeText={setTenantId} autoCapitalize="none" />
+        <FormField label="Client ID (Application ID) *" placeholder="Azure AD application client ID" value={clientId} onChangeText={setClientId} autoCapitalize="none" />
 
-        <View style={styles.fieldGroup}>
-          <Text style={styles.fieldLabel}>Client Secret</Text>
-          <View style={styles.secretRow}>
-            <TextInput
-              style={[styles.input, styles.secretInput]}
-              placeholder="Azure AD application client secret"
-              secureTextEntry={obscureSecret}
-              value={clientSecret}
-              onChangeText={setClientSecret}
+        <FormField
+          label="Client Secret"
+          placeholder="Azure AD application client secret"
+          secureTextEntry={obscureSecret}
+          value={clientSecret}
+          onChangeText={setClientSecret}
+          autoCapitalize="none"
+          helperText="Client secret is not stored. Enter only when testing connection."
+          rightAccessory={
+            <IconButton
+              icon="eye"
+              accessibilityLabel={obscureSecret ? 'Show client secret' : 'Hide client secret'}
+              onPress={() => setObscureSecret((prev) => !prev)}
+              color={obscureSecret ? colors.contentSecondary : colors.active}
             />
-            <Pressable style={styles.secretToggle} onPress={() => setObscureSecret((prev) => !prev)}>
-              <Text>{obscureSecret ? '👁' : '🙈'}</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.helperText}>Note: Client secret is not stored. Enter only when testing connection.</Text>
-        </View>
+          }
+        />
 
-        <FormField label="Business Central Company ID *" placeholder="BC company GUID" value={bcCompanyId} onChangeText={setBcCompanyId} />
+        <FormField label="Business Central Company ID *" placeholder="BC company GUID" value={bcCompanyId} onChangeText={setBcCompanyId} autoCapitalize="none" />
         <FormField
           label="BC API Base URL *"
           placeholder="https://api.businesscentral.dynamics.com/v2.0/{tenant-id}/{environment}"
           value={bcApiUrl}
           onChangeText={setBcApiUrl}
+          autoCapitalize="none"
           helperText="For trial: https://api.businesscentral.dynamics.com/v2.0/229fde23-1706-429c-8976-f70cf00cd16e/Sandbox"
         />
 
@@ -214,10 +228,13 @@ export default function BcSettings() {
             ))}
           </View>
         </View>
-      </View>
+      </Card>
 
-      <View style={[styles.section, shadows.card]}>
-        <Text style={textStyles.heading3}>🔄 Sync Settings</Text>
+      <Card padding="spacious" style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <AppIcon name="activity" size={20} color={colors.shell} />
+          <Text style={textStyles.heading3}>Sync Settings</Text>
+        </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.fieldLabel}>Sync Interval</Text>
@@ -245,53 +262,45 @@ export default function BcSettings() {
           value={autoAttachPODs}
           onValueChange={setAutoAttachPODs}
         />
-      </View>
+      </Card>
 
       {testResult ? (
         <View style={[styles.testResultBox, testSuccess ? styles.testResultSuccess : styles.testResultFailure]}>
-          <Text style={[styles.testResultText, { color: testSuccess ? colors.success : colors.error }]}>{testResult}</Text>
+          <AppIcon name={testSuccess ? 'check' : 'alert'} size={20} color={testSuccess ? colors.verified : colors.critical} />
+          <Text style={styles.testResultText}>{testResult}</Text>
         </View>
       ) : null}
 
       <View style={styles.buttonRow}>
-        <Pressable style={[styles.actionButton, styles.testButton]} disabled={isTesting || isSaving} onPress={handleTestConnection}>
-          {isTesting ? <ActivityIndicator color={colors.white} size="small" /> : null}
-          <Text style={textStyles.buttonText}>{isTesting ? 'Testing...' : '📡 Test Connection'}</Text>
-        </Pressable>
-        <Pressable style={[styles.actionButton, styles.saveButton]} disabled={isTesting || isSaving} onPress={handleSave}>
-          {isSaving ? <ActivityIndicator color={colors.white} size="small" /> : null}
-          <Text style={textStyles.buttonText}>{isSaving ? 'Saving...' : '💾 Save Configuration'}</Text>
-        </Pressable>
+        <SecondaryButton
+          label={isTesting ? 'Testing...' : 'Test Connection'}
+          icon="link"
+          loading={isTesting}
+          disabled={isTesting || isSaving}
+          onPress={handleTestConnection}
+          style={styles.actionButton}
+        />
+        <PrimaryButton
+          label={isSaving ? 'Saving...' : 'Save Configuration'}
+          icon="check"
+          loading={isSaving}
+          disabled={isTesting || isSaving}
+          onPress={handleSave}
+          style={styles.actionButton}
+        />
       </View>
-    </ScrollView>
-  );
-}
-
-function FormField({
-  label,
-  placeholder,
-  value,
-  onChangeText,
-  helperText,
-}: {
-  label: string;
-  placeholder: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  helperText?: string;
-}) {
-  return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput style={styles.input} placeholder={placeholder} value={value} onChangeText={onChangeText} />
-      {helperText ? <Text style={styles.helperText}>{helperText}</Text> : null}
-    </View>
+    </Screen>
   );
 }
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
   return (
-    <Pressable style={[styles.chip, selected && styles.chipSelected]} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={[styles.chip, selected && styles.chipSelected]}
+      onPress={onPress}
+    >
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
     </Pressable>
   );
@@ -314,73 +323,57 @@ function SwitchTile({
         <Text style={styles.switchTileTitle}>{title}</Text>
         <Text style={styles.switchTileSubtitle}>{subtitle}</Text>
       </View>
-      <Switch value={value} onValueChange={onValueChange} />
+      <Switch value={value} onValueChange={onValueChange} trackColor={{ true: colors.active, false: colors.border }} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.medium, paddingBottom: spacing.xLarge },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  headerCard: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium, marginBottom: spacing.large },
+  content: { paddingVertical: spacing.medium, gap: spacing.medium },
+  headerCard: {},
   headerRow: { flexDirection: 'row', alignItems: 'center' },
   headerTextBox: { flex: 1, marginRight: spacing.small },
-  headerSubtitle: { color: colors.textSecondary, marginTop: 4, fontSize: 13 },
-  section: { backgroundColor: colors.card, borderRadius: radii.cardRadius, padding: spacing.medium, marginBottom: spacing.medium },
-  fieldGroup: { marginTop: spacing.medium },
-  fieldLabel: { fontWeight: '600', marginBottom: spacing.small, color: colors.textPrimary },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.divider,
-    borderRadius: radii.borderRadius,
-    paddingHorizontal: spacing.small + 4,
-    paddingVertical: spacing.small + 4,
-    backgroundColor: colors.background,
-  },
-  helperText: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-  secretRow: { flexDirection: 'row', alignItems: 'center' },
-  secretInput: { flex: 1 },
-  secretToggle: { paddingHorizontal: spacing.small + 4, paddingVertical: spacing.small + 4 },
+  headerSubtitle: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: spacing.xs },
+  section: { gap: spacing.small },
+  sectionHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.small, marginBottom: spacing.xs },
+  fieldGroup: { marginTop: spacing.small },
+  fieldLabel: { ...textStyles.label, marginBottom: spacing.small },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.small },
   chip: {
     borderRadius: radii.borderRadius,
     paddingHorizontal: spacing.small + 4,
     paddingVertical: 6,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.divider,
+    borderColor: colors.border,
   },
-  chipSelected: { backgroundColor: `${colors.primary}33`, borderColor: colors.primary },
-  chipText: { fontSize: 13, color: colors.textSecondary },
-  chipTextSelected: { color: colors.primary, fontWeight: '600' },
+  chipSelected: { backgroundColor: colors.activeMuted, borderColor: colors.active },
+  chipText: { ...textStyles.bodySmall, color: colors.contentSecondary },
+  chipTextSelected: { color: colors.shell, fontWeight: '600' },
   switchTile: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radii.borderRadius,
     borderWidth: 1,
-    borderColor: colors.divider,
+    borderColor: colors.border,
     padding: spacing.small + 4,
     marginTop: spacing.small + 4,
   },
   switchTileTextBox: { flex: 1, marginRight: spacing.small },
-  switchTileTitle: { fontWeight: '500', fontSize: 14 },
-  switchTileSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-  testResultBox: { borderRadius: radii.borderRadius, borderWidth: 1, padding: spacing.medium, marginBottom: spacing.medium },
-  testResultSuccess: { backgroundColor: `${colors.success}14`, borderColor: colors.success },
-  testResultFailure: { backgroundColor: `${colors.error}14`, borderColor: colors.error },
-  testResultText: { fontWeight: '500' },
-  buttonRow: { flexDirection: 'row', gap: spacing.medium },
-  actionButton: {
-    flex: 1,
+  switchTileTitle: { ...textStyles.label },
+  switchTileSubtitle: { ...textStyles.bodySmall, color: colors.contentSecondary, marginTop: spacing.xs },
+  testResultBox: {
+    alignItems: 'flex-start',
+    borderRadius: radii.borderRadius,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.small,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radii.buttonRadius,
-    paddingVertical: spacing.medium,
+    padding: spacing.medium,
   },
-  testButton: { backgroundColor: colors.info },
-  saveButton: { backgroundColor: colors.primary },
+  testResultSuccess: { backgroundColor: colors.verifiedMuted, borderColor: colors.verified },
+  testResultFailure: { backgroundColor: colors.criticalMuted, borderColor: colors.critical },
+  testResultText: { ...textStyles.bodyMedium, flex: 1 },
+  buttonRow: { flexDirection: 'row', gap: spacing.medium },
+  actionButton: { flex: 1 },
 });

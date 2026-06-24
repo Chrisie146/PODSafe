@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../../stores/useAuthStore';
-import { colors } from '../../theme/tokens';
+import { colors, spacing } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
+import { Screen, Card, FormField, PrimaryButton, SecondaryButton, AppIcon } from '../../components/ui';
 import type { AuthStackParamList } from '../../navigation/AuthStack';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
@@ -13,6 +14,9 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
  * the developer dashboard in the Flutter version is intentionally NOT replicated here —
  * per the plan, the developer screen should be reached via a build-gated debug menu
  * instead (Phase 3/Developer screen), not a hidden gesture.
+ *
+ * UI/UX Refresh Phase 5: rebuilt on the shared Operations Precision primitives
+ * (Screen/Card/FormField/PrimaryButton) — behaviour and store calls unchanged.
  */
 export default function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
@@ -32,61 +36,84 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={[textStyles.heading1, styles.title]}>PODSafe</Text>
-      <Text style={[textStyles.bodyMedium, styles.subtitle]}>Sign in to continue</Text>
+    <Screen scroll keyboardAvoiding contentContainerStyle={styles.content}>
+      <View style={styles.brand}>
+        <View style={styles.logoBadge}>
+          <AppIcon name="shield" size={32} color={colors.onPrimary} />
+        </View>
+        <Text style={[textStyles.heading1, styles.title]}>PODSafe</Text>
+        <Text style={[textStyles.bodyMedium, styles.subtitle]}>Sign in to continue</Text>
+      </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+      <Card padding="spacious" style={styles.card}>
+        <FormField
+          label="Email"
+          placeholder="you@company.com"
+          autoCapitalize="none"
+          autoComplete="email"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <FormField
+          label="Password"
+          placeholder="Your password"
+          secureTextEntry
+          autoComplete="password"
+          value={password}
+          onChangeText={setPassword}
+        />
 
-      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+        {errorMessage ? (
+          <View accessibilityLiveRegion="polite" style={styles.errorBanner}>
+            <AppIcon name="alert" size={20} color={colors.critical} />
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          </View>
+        ) : null}
 
-      <Pressable style={styles.button} onPress={handleSubmit} disabled={isLoading}>
-        {isLoading ? <ActivityIndicator color={colors.white} /> : <Text style={textStyles.buttonText}>Sign In</Text>}
-      </Pressable>
+        <PrimaryButton label="Sign in" onPress={handleSubmit} loading={isLoading} style={styles.submit} />
+      </Card>
 
-      <Pressable onPress={() => navigation.navigate('Signup')}>
-        <Text style={[textStyles.bodyMedium, styles.link]}>Don&apos;t have an account? Sign up</Text>
-      </Pressable>
-      <Pressable onPress={() => navigation.navigate('InviteRegistration', { token: undefined })}>
-        <Text style={[textStyles.bodyMedium, styles.link]}>Have an invite code?</Text>
-      </Pressable>
-    </View>
+      <View style={styles.links}>
+        <SecondaryButton
+          label="Create an account"
+          icon="user"
+          onPress={() => navigation.navigate('Signup')}
+        />
+        <SecondaryButton
+          label="Have an invite code?"
+          icon="key"
+          onPress={() => navigation.navigate('InviteRegistration', { token: undefined })}
+        />
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: colors.background },
-  title: { textAlign: 'center', color: colors.primary, marginBottom: 4 },
-  subtitle: { textAlign: 'center', marginBottom: 32 },
-  input: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    padding: 14,
-    marginBottom: 12,
-  },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+  content: { flexGrow: 1, justifyContent: 'center', gap: spacing.large, maxWidth: 440, width: '100%', alignSelf: 'center' },
+  brand: { alignItems: 'center', gap: spacing.small },
+  logoBadge: {
     alignItems: 'center',
-    marginTop: 8,
+    backgroundColor: colors.shell,
+    borderRadius: 20,
+    height: 64,
+    justifyContent: 'center',
+    marginBottom: spacing.small,
+    width: 64,
   },
-  error: { color: colors.error, marginBottom: 12, textAlign: 'center' },
-  link: { color: colors.primary, textAlign: 'center', marginTop: 16 },
+  title: { textAlign: 'center', color: colors.shell },
+  subtitle: { textAlign: 'center', color: colors.contentSecondary },
+  card: { gap: spacing.medium },
+  errorBanner: {
+    alignItems: 'center',
+    backgroundColor: colors.criticalMuted,
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: spacing.small,
+    padding: spacing.small,
+  },
+  errorText: { ...textStyles.bodySmall, color: colors.critical, flex: 1 },
+  submit: { marginTop: spacing.xs },
+  links: { gap: spacing.small },
 });

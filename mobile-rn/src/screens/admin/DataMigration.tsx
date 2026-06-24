@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import { colors, spacing, radii } from '../../theme/tokens';
 import { textStyles } from '../../theme/textStyles';
+import { Screen, Card, PrimaryButton, EmptyState, AppIcon } from '../../components/ui';
 
 /**
  * Ported from lib/screens/admin/data_migration_screen.dart (verified against source on
@@ -13,6 +14,9 @@ import { textStyles } from '../../theme/textStyles';
  * This is pure client-side Firestore logic in the Dart source too (no service/Cloud
  * Function involved despite being a migration tool) — kept inline here rather than
  * adding a repository for a script that's explicitly meant to run once.
+ *
+ * UI/UX Refresh Phase 5: chrome rebuilt on the shared primitives; UI glyphs replaced
+ * with SVG icons and emoji removed from log text — migration logic unchanged.
  */
 interface DataMigrationProps {
   navigation: { goBack: () => void };
@@ -32,9 +36,9 @@ export default function DataMigration({ navigation }: DataMigrationProps) {
     setLogs([]);
 
     try {
-      addLog('🚀 Starting data migration...');
+      addLog('Starting data migration...');
 
-      addLog('📝 Step 1: Creating default company...');
+      addLog('Step 1: Creating default company...');
       const companyRef = await firestore().collection('companies').add({
         name: 'Default Company',
         email: 'admin@podsafe.com',
@@ -46,9 +50,9 @@ export default function DataMigration({ navigation }: DataMigrationProps) {
         settings: { autoApproveDrivers: false, requireDriverApproval: true },
       });
       const defaultCompanyId = companyRef.id;
-      addLog(`✅ Default company created with ID: ${defaultCompanyId}`);
+      addLog(`Default company created with ID: ${defaultCompanyId}`);
 
-      addLog('📝 Step 2: Updating existing users...');
+      addLog('Step 2: Updating existing users...');
       const usersSnapshot = await firestore().collection('users').get();
       let usersUpdated = 0;
       for (const doc of usersSnapshot.docs) {
@@ -60,12 +64,12 @@ export default function DataMigration({ navigation }: DataMigrationProps) {
             updatedAt: firestore.FieldValue.serverTimestamp(),
           });
           usersUpdated += 1;
-          addLog(`  ✓ Updated user: ${data.email} (${data.role ?? 'driver'})`);
+          addLog(`  Updated user: ${data.email} (${data.role ?? 'driver'})`);
         }
       }
-      addLog(`✅ Updated ${usersUpdated} users`);
+      addLog(`Updated ${usersUpdated} users`);
 
-      addLog('📝 Step 3: Updating existing deliveries...');
+      addLog('Step 3: Updating existing deliveries...');
       const deliveriesSnapshot = await firestore().collection('deliveries').get();
       let deliveriesUpdated = 0;
       for (const doc of deliveriesSnapshot.docs) {
@@ -73,21 +77,21 @@ export default function DataMigration({ navigation }: DataMigrationProps) {
         if (!data.companyId) {
           await doc.ref.update({ companyId: defaultCompanyId });
           deliveriesUpdated += 1;
-          addLog(`  ✓ Updated delivery: ${doc.id}`);
+          addLog(`  Updated delivery: ${doc.id}`);
         }
       }
-      addLog(`✅ Updated ${deliveriesUpdated} deliveries`);
+      addLog(`Updated ${deliveriesUpdated} deliveries`);
 
       addLog('');
-      addLog('🎉 Migration completed successfully!');
+      addLog('Migration completed successfully.');
       addLog('');
       addLog('Summary:');
-      addLog(`  • Company ID: ${defaultCompanyId}`);
-      addLog(`  • Users updated: ${usersUpdated}`);
-      addLog(`  • Deliveries updated: ${deliveriesUpdated}`);
+      addLog(`  Company ID: ${defaultCompanyId}`);
+      addLog(`  Users updated: ${usersUpdated}`);
+      addLog(`  Deliveries updated: ${deliveriesUpdated}`);
       addLog('');
-      addLog('ℹ️  All existing users are now part of "Default Company"');
-      addLog('ℹ️  All existing drivers are approved and active');
+      addLog('All existing users are now part of "Default Company".');
+      addLog('All existing drivers are approved and active.');
 
       Alert.alert(
         'Migration Complete',
@@ -96,7 +100,7 @@ export default function DataMigration({ navigation }: DataMigrationProps) {
       );
     } catch (e) {
       addLog('');
-      addLog(`❌ ERROR: ${(e as Error).message}`);
+      addLog(`ERROR: ${(e as Error).message}`);
       addLog('');
       addLog('Migration failed. Please try again or contact support.');
       Alert.alert('Migration Failed', `Error: ${(e as Error).message}`);
@@ -106,29 +110,37 @@ export default function DataMigration({ navigation }: DataMigrationProps) {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.infoBox}>
-        <Text style={textStyles.heading3}>ℹ️ Multi-Company Migration</Text>
-        <Text style={styles.infoBoxLabel}>This migration will:</Text>
-        <Text style={styles.infoBoxText}>
+    <Screen contentContainerStyle={styles.content}>
+      <Card padding="spacious" style={styles.infoCard}>
+        <View style={styles.infoHeader}>
+          <AppIcon name="info" size={20} color={colors.active} />
+          <Text style={textStyles.heading3}>Multi-Company Migration</Text>
+        </View>
+        <Text style={[textStyles.label, styles.infoLabel]}>This migration will:</Text>
+        <Text style={[textStyles.bodyMedium, styles.infoText]}>
           {'• Create a "Default Company" for existing data\n'}
           {'• Add companyId to all existing users\n'}
           {'• Add companyId to all existing deliveries\n'}
           {'• Approve all existing drivers automatically'}
         </Text>
         <View style={styles.warningBox}>
-          <Text style={styles.warningText}>⚠ This is a one-time migration. Run it only once.</Text>
+          <AppIcon name="alert" size={18} color={colors.attention} />
+          <Text style={styles.warningText}>This is a one-time migration. Run it only once.</Text>
         </View>
-      </View>
+      </Card>
 
-      <Pressable style={[styles.runButton, isRunning && styles.runButtonDisabled]} disabled={isRunning} onPress={runMigration}>
-        {isRunning ? <ActivityIndicator color={colors.white} /> : null}
-        <Text style={textStyles.buttonText}>{isRunning ? 'Running Migration...' : '▶ Run Migration'}</Text>
-      </Pressable>
+      <PrimaryButton
+        label={isRunning ? 'Running migration...' : 'Run migration'}
+        icon={isRunning ? undefined : 'arrowRight'}
+        loading={isRunning}
+        disabled={isRunning}
+        onPress={runMigration}
+        style={styles.runButton}
+      />
 
       {logs.length > 0 ? (
         <View style={styles.logsSection}>
-          <Text style={textStyles.heading3}>Migration Log</Text>
+          <Text style={[textStyles.heading3, styles.logsTitle]}>Migration Log</Text>
           <FlatList
             style={styles.logsBox}
             data={logs}
@@ -137,51 +149,44 @@ export default function DataMigration({ navigation }: DataMigrationProps) {
           />
         </View>
       ) : (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateTitle}>Ready to migrate</Text>
-          <Text style={styles.emptyStateSubtitle}>Tap the button above to start</Text>
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            title="Ready to migrate"
+            message="Run the one-time migration above to move existing data into the multi-company structure."
+            icon="upload"
+          />
         </View>
       )}
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, padding: spacing.large },
-  infoBox: {
-    backgroundColor: `${colors.info}14`,
-    borderRadius: radii.borderRadius,
-    borderWidth: 1,
-    borderColor: `${colors.info}66`,
-    padding: spacing.medium,
-  },
-  infoBoxLabel: { fontWeight: 'bold', color: colors.info, marginTop: spacing.medium },
-  infoBoxText: { color: colors.info, marginTop: spacing.small, lineHeight: 20 },
+  content: { flex: 1, paddingVertical: spacing.medium },
+  infoCard: { gap: spacing.small },
+  infoHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.small },
+  infoLabel: { marginTop: spacing.small },
+  infoText: { color: colors.contentSecondary, lineHeight: 20 },
   warningBox: {
-    flexDirection: 'row',
-    backgroundColor: `${colors.warning}14`,
+    alignItems: 'center',
+    backgroundColor: colors.attentionMuted,
     borderRadius: radii.borderRadius,
-    borderWidth: 1,
-    borderColor: `${colors.warning}80`,
-    padding: spacing.small + 4,
-    marginTop: spacing.medium,
-  },
-  warningText: { color: colors.warning, fontWeight: '500', fontSize: 13, flex: 1 },
-  runButton: {
     flexDirection: 'row',
     gap: spacing.small,
-    backgroundColor: colors.primary,
-    borderRadius: radii.buttonRadius,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.medium,
-    marginTop: spacing.large,
+    marginTop: spacing.small,
+    padding: spacing.small + 4,
   },
-  runButtonDisabled: { opacity: 0.6 },
+  warningText: { ...textStyles.bodySmall, color: colors.contentPrimary, flex: 1 },
+  runButton: { marginTop: spacing.large },
   logsSection: { flex: 1, marginTop: spacing.large },
-  logsBox: { backgroundColor: '#1A1A1A', borderRadius: radii.borderRadius, padding: spacing.medium, marginTop: spacing.small + 4 },
-  logLine: { color: colors.white, fontFamily: 'monospace', fontSize: 12, marginBottom: 4 },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: spacing.large },
-  emptyStateTitle: { color: colors.textSecondary, fontSize: 16 },
-  emptyStateSubtitle: { color: colors.textSecondary, fontSize: 12, marginTop: spacing.small },
+  logsTitle: { marginBottom: spacing.small },
+  logsBox: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+    borderRadius: radii.borderRadius,
+    borderWidth: 1,
+    padding: spacing.medium,
+  },
+  logLine: { color: colors.contentPrimary, fontFamily: 'monospace', fontSize: 12, marginBottom: 4 },
+  emptyWrap: { flex: 1, justifyContent: 'center' },
 });
